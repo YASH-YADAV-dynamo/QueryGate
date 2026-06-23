@@ -1,0 +1,24 @@
+{
+  "name": "db-mcp-server",
+  "version": "2.0.0",
+  "type": "module",
+  "bin": { "db-mcp": "./src/index.ts" },
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "test": "bun test --preload ./tests/setup.ts",
+    "test:watch": "bun test --preload ./tests/setup.ts --watch",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "pg": "^8.13.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.6.3",
+    "bun-types": "latest"
+  }
+}

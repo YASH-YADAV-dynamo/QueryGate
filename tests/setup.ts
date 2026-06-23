@@ -1,0 +1,5 @@
+process.env.DATABASE_URL ??= "postgres://test:test@localhost:5432/testdb"
+process.env.MCP_RATE_LIMIT ??= "30"
+process.env.MCP_MAX_ROWS ??= "500"
+process.env.MCP_QUERY_TIMEOUT_MS ??= "10000"
+process.env.MCP_SESSION_TTL_MS ??= "7200000"
