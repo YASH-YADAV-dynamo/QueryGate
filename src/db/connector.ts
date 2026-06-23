@@ -15,10 +15,19 @@ function isLocalHost(databaseUrl: string): boolean {
 }
 
 /** Neon/serverless-friendly pool options */
+/** Strip params that break node-pg pooler connects (e.g. Neon channel_binding). */
+export function normalizeDatabaseUrl(databaseUrl: string): string {
+  return databaseUrl
+    .trim()
+    .replace(/([?&])channel_binding=[^&]*&?/g, "$1")
+    .replace(/[?&]$/, "")
+}
+
 function buildPoolConfig(databaseUrl: string): pg.PoolConfig {
-  const isLocal = isLocalHost(databaseUrl)
+  const normalized = normalizeDatabaseUrl(databaseUrl)
+  const isLocal = isLocalHost(normalized)
   return {
-    connectionString: databaseUrl,
+    connectionString: normalized,
     max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: isLocal ? 10_000 : 25_000,
@@ -31,7 +40,7 @@ export async function getOrCreatePool(databaseUrl: string): Promise<pg.Pool> {
   const existing = pools.get(id)
   if (existing) return existing
 
-  const pool = new pg.Pool(buildPoolConfig(databaseUrl.trim()))
+  const pool = new pg.Pool(buildPoolConfig(databaseUrl))
 
   try {
     const client = await pool.connect()

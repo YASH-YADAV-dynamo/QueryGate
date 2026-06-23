@@ -7,6 +7,10 @@ const SettingsSchema = z.object({
   MCP_MAX_ROWS: z.coerce.number().default(500),
   MCP_QUERY_TIMEOUT_MS: z.coerce.number().default(10_000),
   MCP_RATE_LIMIT: z.coerce.number().default(30),
+  /** Set MCP_SCHEMA_SAMPLES=1 to fetch example cell values at connect (default: off). */
+  MCP_SCHEMA_SAMPLES: z
+    .union([z.literal("0"), z.literal("1"), z.literal("true"), z.literal("false")])
+    .optional(),
 })
 
 export const settings = SettingsSchema.parse(process.env)
@@ -39,6 +43,10 @@ export const config = {
   },
   get MCP_RATE_LIMIT() {
     return settings.MCP_RATE_LIMIT
+  },
+  get MCP_SCHEMA_SAMPLES() {
+    const v = settings.MCP_SCHEMA_SAMPLES ?? process.env.MCP_SCHEMA_SAMPLES
+    return v === "1" || v === "true"
   },
 }
 

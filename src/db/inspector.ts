@@ -22,6 +22,7 @@ const INSPECT_COLUMNS_SQL = `
     AND tc.table_schema   = c.table_schema
   WHERE c.table_schema NOT IN ('pg_catalog','information_schema','pg_toast')
     AND c.table_schema NOT LIKE 'pg_temp%'
+    AND c.table_schema NOT LIKE 'pg_toast_temp%'
   ORDER BY c.table_schema, c.table_name, c.ordinal_position
 `
 

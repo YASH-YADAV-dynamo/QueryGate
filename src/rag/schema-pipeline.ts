@@ -7,6 +7,7 @@ import { detectPii } from "../security/pii-detector.js"
 import { embedTexts } from "../rag/embedder.js"
 import { logger } from "../utils/logger.js"
 import { McpError } from "../utils/error.js"
+import { config } from "../config/index.js"
 
 function buildEmbeddingText(table: TableMeta): string {
   const cols = table.columns.map((c) => c.name).join(" ")
@@ -62,17 +63,22 @@ export async function buildSchemaStore(
     const tables = normalizeSchema(raw)
     logger.info("Schema normalized", { tableCount: tables.length })
 
-    // Step 3: detect PII + fetch sample values (bounded — safe for Neon/Vercel)
+    // Step 3: PII flags; optional sample values (off by default — metadata only)
     for (const table of tables) {
       for (const col of table.columns) {
         col.piiRisk = detectPii(col.name)
+        if (!config.MCP_SCHEMA_SAMPLES) {
+          col.sampleValues = col.piiRisk === "high" ? ["[masked]"] : []
+        }
       }
     }
-    await fetchSamplesBounded(
-      pool,
-      tables,
-      (p, schema, table, column) => fetchSampleValues(p, schema, table, column),
-    )
+    if (config.MCP_SCHEMA_SAMPLES) {
+      await fetchSamplesBounded(
+        pool,
+        tables,
+        (p, schema, table, column) => fetchSampleValues(p, schema, table, column),
+      )
+    }
 
     // Step 4: build FK graph
     const fkGraph = buildFkGraph(tables)
