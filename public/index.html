@@ -28,15 +28,38 @@
       .muted {
         color: #666;
       }
+      a {
+        color: #2563eb;
+      }
     </style>
   </head>
   <body>
     <h1>QueryGate</h1>
     <p class="muted">Read-only PostgreSQL MCP — your AI writes SQL, we validate and run it.</p>
 
+    <h2>MCP endpoint</h2>
+    <p>Use this URL in Cursor, Claude, or ChatGPT:</p>
+    <pre><code id="mcp-url">https://querygate.vercel.app/mcp</code></pre>
+
+    <h2>Client config</h2>
+    <p>Replace <code>DATABASE_URL</code> with your Postgres connection string:</p>
+    <pre><code id="config">{
+  "mcpServers": {
+    "querygate": {
+      "url": "https://querygate.vercel.app/mcp",
+      "headers": {
+        "DATABASE_URL": "postgres://user:password@host:5432/mydb"
+      }
+    }
+  }
+}</code></pre>
+
+    <p>Ready-to-copy JSON: <a id="setup-link" href="/setup">/setup</a></p>
+
     <h2>ChatGPT custom app</h2>
     <p>
-      Settings → Apps → Create app → Server URL: <code id="mcp-url-chatgpt"></code><br />
+      Settings → Apps → Create app → Server URL:
+      <code>https://querygate.vercel.app/mcp</code><br />
       Add header <code>DATABASE_URL</code> with your Postgres connection string.
     </p>
 
@@ -53,31 +76,13 @@
   }
 }</code></pre>
 
-    <h2>Remote MCP (HTTPS)</h2>
-    <p>Use this fixed URL in any remote MCP client:</p>
-    <pre><code id="mcp-url">/mcp</code></pre>
-
-    <h2>Client config</h2>
-    <p>Same JSON for every app — replace <code>DATABASE_URL</code> with your Postgres connection string:</p>
-    <pre><code id="config">{
-  "mcpServers": {
-    "querygate": {
-      "url": "https://YOUR-DOMAIN/mcp",
-      "headers": {
-        "DATABASE_URL": "postgres://user:password@host:5432/mydb"
-      }
-    }
-  }
-}</code></pre>
-
-    <p>JSON with your deploy URL: <a href="/setup">/setup</a></p>
     <script>
       const origin = window.location.origin
-      document.getElementById("mcp-url").textContent = origin + "/mcp"
-      document.getElementById("mcp-url-chatgpt").textContent = origin + "/mcp"
+      const mcpUrl = origin + "/mcp"
+      document.getElementById("mcp-url").textContent = mcpUrl
       document.getElementById("config").textContent = document
         .getElementById("config")
-        .textContent.replace("https://YOUR-DOMAIN/mcp", origin + "/mcp")
+        .textContent.replace(/https:\/\/querygate\.vercel\.app\/mcp/g, mcpUrl)
     </script>
   </body>
 </html>
