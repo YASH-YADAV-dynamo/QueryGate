@@ -4,15 +4,16 @@ A read-only PostgreSQL MCP server. Your AI client (Cursor, Claude Desktop, Claud
 
 No OpenAI or Anthropic API keys required.
 
-**Live hosted instance:** [querygate.vercel.app](https://querygate.vercel.app/) — use it in any MCP client; only add your own `DATABASE_URL`.
+**Live hosted instance:** [querygate.vercel.app](https://querygate.vercel.app/) — no install required. Users paste their Postgres URL in chat; the app passes it as a `DATABASE_URL` header.
 
-| Endpoint | URL |
-|----------|-----|
-| MCP | `https://querygate.vercel.app/mcp` |
-| Setup page | [querygate.vercel.app](https://querygate.vercel.app/) |
-| Ready-to-copy JSON | [querygate.vercel.app/setup](https://querygate.vercel.app/setup) |
+| Endpoint | URL | Used by |
+|----------|-----|---------|
+| **SSE (ChatGPT)** | `https://querygate.vercel.app/sse` | ChatGPT custom app |
+| **Streamable HTTP** | `https://querygate.vercel.app/mcp` | Cursor, Claude remote MCP |
+| Setup page | [querygate.vercel.app](https://querygate.vercel.app/) | Copy-paste config |
+| JSON config | [querygate.vercel.app/setup](https://querygate.vercel.app/setup) | Ready-to-copy JSON |
 
-**Local stdio:** Cursor / Claude Desktop (`DATABASE_URL` in `env`).  
+**Local stdio:** Cursor / Claude Desktop — optional `DATABASE_URL` in `env`, or paste URL in chat.  
 **Self-host:** fork and deploy to Vercel, or run `npm run start:http` locally.
 
 ---
@@ -66,13 +67,14 @@ bun install
 
 ## Transports
 
-| Mode | Command | Used by |
-|------|---------|---------|
+| Mode | Endpoint / command | Used by |
+|------|-------------------|---------|
 | **stdio** | `npm start` or `querygate --stdio` | Cursor, Claude Desktop, Claude Code |
-| **HTTP** | `npm run start:http` | Local dev, self-hosted |
-| **HTTPS** | [querygate.vercel.app/mcp](https://querygate.vercel.app/mcp) | ChatGPT custom app, Cursor, Claude, remote MCP clients |
+| **HTTP** | `npm run start:http` → `/sse` + `/mcp` | Local dev, self-hosted |
+| **HTTPS** | [querygate.vercel.app/sse](https://querygate.vercel.app/sse) | ChatGPT custom app |
+| **HTTPS** | [querygate.vercel.app/mcp](https://querygate.vercel.app/mcp) | Cursor / Claude remote MCP |
 
-Both modes expose the same tools. Credentials always come from `DATABASE_URL` — in the `env` block (stdio) or `headers` block (HTTP/HTTPS).
+Credentials come from `DATABASE_URL` in headers (HTTP/HTTPS), `env` (stdio), or the user pastes their connection string in chat and the AI calls `connect` with `database_url`.
 
 ---
 
@@ -82,19 +84,21 @@ Use the **hosted endpoint** below — no install required. For local-only use, s
 
 ### Hosted (recommended)
 
-Point any remote MCP client at QueryGate. Every user uses the same URL — only `DATABASE_URL` differs.
+Point any remote MCP client at QueryGate. Every user uses the same URL — only their database credentials differ.
 
 | URL | Purpose |
 |-----|---------|
-| `https://querygate.vercel.app/mcp` | MCP endpoint |
-| [querygate.vercel.app](https://querygate.vercel.app/) | Setup page with copy-paste config |
+| `https://querygate.vercel.app/sse` | ChatGPT custom app (SSE transport) |
+| `https://querygate.vercel.app/mcp` | Cursor / Claude remote (Streamable HTTP) |
 | [querygate.vercel.app/setup](https://querygate.vercel.app/setup) | JSON config with the live URL |
+
+**ChatGPT / remote clients:**
 
 ```json
 {
   "mcpServers": {
     "querygate": {
-      "url": "https://querygate.vercel.app/mcp",
+      "url": "https://querygate.vercel.app/sse",
       "headers": {
         "DATABASE_URL": "postgres://user:password@host:5432/mydb"
       }
@@ -103,13 +107,9 @@ Point any remote MCP client at QueryGate. Every user uses the same URL — only 
 }
 ```
 
-Replace `DATABASE_URL` with your Postgres connection string. The MCP URL is the same for everyone.
+Users can also paste their Postgres URL in chat — the ChatGPT app forwards it as the `DATABASE_URL` header. Or call `connect` with `database_url` after the server starts.
 
-### ChatGPT custom app
-
-1. ChatGPT → **Settings → Apps → Create app**
-2. Server URL: `https://querygate.vercel.app/mcp`
-3. Add header: `DATABASE_URL` = your Postgres connection string
+**Cursor / Claude remote (Streamable HTTP):** use `https://querygate.vercel.app/mcp` instead of `/sse`.
 
 For local development, run `npm run start:http` and tunnel with [ngrok](https://ngrok.com): `ngrok http 3000` — ChatGPT requires HTTPS.
 
@@ -117,13 +117,13 @@ For local development, run `npm run start:http` and tunnel with [ngrok](https://
 
 ### Local stdio (Cursor, Claude Desktop)
 
-`DATABASE_URL` goes in the `env` block — **not** in a `.env` file and **never** in tool calls.
+`DATABASE_URL` in the `env` block is optional — users can paste their connection string in chat and the AI calls `connect` with `database_url`.
 
 ```bash
 npm run build
-npm start          # stdio — default
+npm start          # stdio — default (starts without DATABASE_URL)
 # or
-npm run start:http # HTTP on port 3000 → http://localhost:3000/mcp
+npm run start:http # HTTP → /sse (ChatGPT) and /mcp (Streamable HTTP)
 ```
 
 ### Connection string format
@@ -174,7 +174,7 @@ On Windows, use escaped backslashes in paths: `"C:\\Users\\YOU\\db-mcp-v2\\dist\
 | **Claude Desktop** | `%APPDATA%\Claude\claude_desktop_config.json` (Win) · `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) |
 | **Claude Code** | `~/.claude/mcp.json` |
 | **ChatGPT Desktop** | Settings → Beta → MCP Servers → paste the JSON |
-| **ChatGPT custom app** | Settings → Apps → Create app → URL + `DATABASE_URL` header |
+| **ChatGPT custom app** | Settings → Apps → Create app → `https://querygate.vercel.app/sse` + `DATABASE_URL` header |
 
 For Claude Desktop, merge the `mcpServers` block into your existing config file if you already have other settings.
 
@@ -191,8 +191,8 @@ QueryGate is already live at [querygate.vercel.app](https://querygate.vercel.app
 3. Use default settings — `vercel.json` handles the rest:
    - `npm run build` compiles TypeScript
    - `public/` satisfies static output
-   - `/mcp` routes to the serverless MCP handler
-4. Your MCP URL will be `https://YOUR-PROJECT.vercel.app/mcp`.
+   - `/sse`, `/messages`, and `/mcp` route to serverless MCP handlers
+4. Your ChatGPT URL will be `https://YOUR-PROJECT.vercel.app/sse`; Streamable HTTP at `/mcp`.
 
 No `DATABASE_URL` env var needed on Vercel — each user passes it in the MCP client `headers` block.
 
@@ -206,13 +206,7 @@ No `DATABASE_URL` env var needed on Vercel — each user passes it in the MCP cl
 4. You should see your database name, table list, and a `session_id`.
 5. Ask a question like *"how many rows are in the users table?"* — the AI should call `schema_reader`, generate a SELECT, then call `execute_sql`.
 
-If the server fails to start, check the MCP client logs. A missing `DATABASE_URL` shows:
-
-```
-[querygate] Config error: DATABASE_URL must be set in mcp.json env block
-```
-
-For the hosted endpoint, ensure `DATABASE_URL` is in the `headers` block — not missing from your MCP config.
+If `connect` fails, the database URL is missing. For hosted clients, add `DATABASE_URL` to headers or paste the URL in chat. For stdio, add it to `env` or pass `database_url` to the `connect` tool.
 
 ---
 
@@ -289,7 +283,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO mcp_readonly
 | Problem | Fix |
 |---------|-----|
 | Server not listed in client | Restart the client after editing `mcp.json` |
-| `Config error: DATABASE_URL` | Add `DATABASE_URL` to the `env` block (stdio) or `headers` block (remote) |
+| `Config error: DATABASE_URL` | Add `DATABASE_URL` to headers (remote), `env` (stdio), or call `connect` with `database_url` |
 | `Session not found` | Call `connect` first; sessions expire after 2 hours by default |
 | `Table not found in schema` | Call `schema_reader` — the AI may have hallucinated a table name |
 | Connection refused | Check host, port, firewall, and that PostgreSQL accepts connections |

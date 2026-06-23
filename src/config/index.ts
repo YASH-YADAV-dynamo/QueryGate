@@ -56,10 +56,5 @@ export const CONSTANTS = {
 } as const
 
 export function requireEnvDatabaseUrl(): void {
-  if (!process.env.DATABASE_URL) {
-    process.stderr.write(
-      "[querygate] Config error: DATABASE_URL must be set in mcp.json env block\n",
-    )
-    process.exit(1)
-  }
+  // No-op — DATABASE_URL is resolved per request (headers) or via connect tool (database_url).
 }

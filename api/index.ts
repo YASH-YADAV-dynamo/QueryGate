@@ -8,11 +8,12 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
   res.status(200).json({
     name: "QueryGate",
     description: "Read-only PostgreSQL MCP server",
-    mcpUrl: `${host}/mcp`,
+    mcpUrl: `${host}/sse`,
+    streamableHttpUrl: `${host}/mcp`,
     setup: {
       mcpServers: {
         querygate: {
-          url: `${host}/mcp`,
+          url: `${host}/sse`,
           headers: {
             DATABASE_URL: "postgres://user:password@host:5432/mydb",
           },

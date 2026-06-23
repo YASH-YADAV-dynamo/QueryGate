@@ -37,16 +37,19 @@
     <h1>QueryGate</h1>
     <p class="muted">Read-only PostgreSQL MCP — your AI writes SQL, we validate and run it.</p>
 
-    <h2>MCP endpoint</h2>
-    <p>Use this URL in Cursor, Claude, or ChatGPT:</p>
-    <pre><code id="mcp-url">https://querygate.vercel.app/mcp</code></pre>
+    <h2>ChatGPT custom app</h2>
+    <p>
+      Settings → Apps → Create app → Server URL:
+      <code id="sse-url">https://querygate.vercel.app/sse</code><br />
+      Add header <code>DATABASE_URL</code> with your Postgres connection string, or paste the URL in chat and let the app pass it as a header.
+    </p>
 
-    <h2>Client config</h2>
+    <h2>Remote MCP config</h2>
     <p>Replace <code>DATABASE_URL</code> with your Postgres connection string:</p>
     <pre><code id="config">{
   "mcpServers": {
     "querygate": {
-      "url": "https://querygate.vercel.app/mcp",
+      "url": "https://querygate.vercel.app/sse",
       "headers": {
         "DATABASE_URL": "postgres://user:password@host:5432/mydb"
       }
@@ -54,14 +57,8 @@
   }
 }</code></pre>
 
-    <p>Ready-to-copy JSON: <a id="setup-link" href="/setup">/setup</a></p>
-
-    <h2>ChatGPT custom app</h2>
-    <p>
-      Settings → Apps → Create app → Server URL:
-      <code>https://querygate.vercel.app/mcp</code><br />
-      Add header <code>DATABASE_URL</code> with your Postgres connection string.
-    </p>
+    <p>Cursor / Claude remote (Streamable HTTP): <code id="mcp-url">https://querygate.vercel.app/mcp</code></p>
+    <p>Ready-to-copy JSON: <a href="/setup">/setup</a></p>
 
     <h2>Local stdio (Cursor, Claude Desktop)</h2>
     <pre><code>{
@@ -75,14 +72,15 @@
     }
   }
 }</code></pre>
+    <p class="muted">Or omit <code>DATABASE_URL</code> from env — user pastes their connection string in chat, then the AI calls <code>connect</code> with <code>database_url</code>.</p>
 
     <script>
       const origin = window.location.origin
-      const mcpUrl = origin + "/mcp"
-      document.getElementById("mcp-url").textContent = mcpUrl
+      document.getElementById("sse-url").textContent = origin + "/sse"
+      document.getElementById("mcp-url").textContent = origin + "/mcp"
       document.getElementById("config").textContent = document
         .getElementById("config")
-        .textContent.replace(/https:\/\/querygate\.vercel\.app\/mcp/g, mcpUrl)
+        .textContent.replace(/https:\/\/querygate\.vercel\.app\/sse/g, origin + "/sse")
     </script>
   </body>
 </html>

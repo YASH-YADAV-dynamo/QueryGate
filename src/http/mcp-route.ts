@@ -3,15 +3,14 @@ import { randomUUID } from "node:crypto"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
 import { createMcpServer } from "../server.js"
-import {
-  extractDatabaseUrlFromHeaders,
-  runWithDatabaseUrlAsync,
-} from "../context.js"
+import { runWithDatabaseUrlAsync } from "../context.js"
 import { applyCors, handlePreflight } from "./cors.js"
-
-type HttpReq = IncomingMessage & { body?: unknown }
-
-type HttpRes = ServerResponse
+import {
+  type HttpReq,
+  type HttpRes,
+  resolveDatabaseUrl,
+  sendMissingDatabaseUrl,
+} from "./database-url.js"
 
 const transports = new Map<string, StreamableHTTPServerTransport>()
 const sessionDatabaseUrls = new Map<string, string>()
@@ -23,14 +22,11 @@ function getSessionId(req: HttpReq): string | undefined {
   return undefined
 }
 
-function resolveDatabaseUrl(req: HttpReq, sessionId?: string): string | undefined {
-  const fromHeader = extractDatabaseUrlFromHeaders(req.headers)
-  if (fromHeader) return fromHeader
-  if (sessionId) return sessionDatabaseUrls.get(sessionId)
-  return undefined
+function resolveDatabaseUrlForSession(req: HttpReq, sessionId?: string): string | undefined {
+  return resolveDatabaseUrl(req, sessionDatabaseUrls, sessionId)
 }
 
-/** MCP Streamable HTTP — GET/POST/DELETE/OPTIONS on /mcp (ChatGPT custom app + remote clients). */
+/** MCP Streamable HTTP — GET/POST/DELETE/OPTIONS on /mcp (Cursor, Claude remote). */
 export async function handleMcpRoute(req: HttpReq, res: HttpRes): Promise<void> {
   applyCors(req, res)
 
@@ -40,17 +36,10 @@ export async function handleMcpRoute(req: HttpReq, res: HttpRes): Promise<void> 
   }
 
   const sessionId = getSessionId(req)
-  const databaseUrl = resolveDatabaseUrl(req, sessionId)
+  const databaseUrl = resolveDatabaseUrlForSession(req, sessionId)
 
   if (!databaseUrl) {
-    res.statusCode = 401
-    res.setHeader("Content-Type", "application/json")
-    res.end(
-      JSON.stringify({
-        error: "Missing DATABASE_URL header",
-        hint: 'Send "DATABASE_URL" or "X-Database-Url" on initialize, or reuse MCP-Session-Id',
-      }),
-    )
+    sendMissingDatabaseUrl(res)
     return
   }
 
@@ -136,7 +125,13 @@ export async function handleMcpRoute(req: HttpReq, res: HttpRes): Promise<void> 
 export function handleHealth(_req: HttpReq, res: HttpRes): void {
   res.statusCode = 200
   res.setHeader("Content-Type", "application/json")
-  res.end(JSON.stringify({ ok: true, service: "querygate", transport: "streamable-http" }))
+  res.end(
+    JSON.stringify({
+      ok: true,
+      service: "querygate",
+      endpoints: { sse: "/sse", messages: "/messages", streamableHttp: "/mcp" },
+    }),
+  )
 }
 
 /** @deprecated Use handleMcpRoute */

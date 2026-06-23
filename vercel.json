@@ -5,11 +5,21 @@
   "framework": null,
   "outputDirectory": "public",
   "rewrites": [
+    { "source": "/sse", "destination": "/api/sse" },
+    { "source": "/messages", "destination": "/api/messages" },
     { "source": "/mcp", "destination": "/api/mcp" },
     { "source": "/health", "destination": "/api/health" },
     { "source": "/setup", "destination": "/api/index" }
   ],
   "functions": {
+    "api/sse.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "api/messages.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
     "api/mcp.ts": {
       "maxDuration": 60,
       "memory": 1024

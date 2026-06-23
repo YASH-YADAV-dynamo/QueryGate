@@ -19,8 +19,9 @@ export async function startHttpServer(options: HttpServerOptions = {}): Promise<
   })
 
   logger.info("querygate started (http)", {
-    url: `http://${host === "0.0.0.0" ? "localhost" : host}:${port}/mcp`,
+    sse: `http://${host === "0.0.0.0" ? "localhost" : host}:${port}/sse`,
+    streamableHttp: `http://${host === "0.0.0.0" ? "localhost" : host}:${port}/mcp`,
     health: `http://${host === "0.0.0.0" ? "localhost" : host}:${port}/health`,
-    hint: "Use ngrok or deploy to Vercel for ChatGPT HTTPS custom app",
+    hint: "ChatGPT custom app → /sse. Cursor remote MCP → /mcp.",
   })
 }
