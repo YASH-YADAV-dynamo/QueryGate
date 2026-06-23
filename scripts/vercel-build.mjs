@@ -10,22 +10,33 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const envPath = resolve(root, ".env")
 if (existsSync(envPath)) config({ path: envPath })
 
+function runPrisma(...args) {
+  const prismaCli = resolve(root, "node_modules", "prisma", "build", "index.js")
+  const r = spawnSync(process.execPath, [prismaCli, ...args], {
+    stdio: "inherit",
+    cwd: root,
+    env: process.env,
+  })
+  if (r.status !== 0) process.exit(r.status ?? 1)
+}
+
 function run(cmd, args) {
-  const r = spawnSync(cmd, args, { stdio: "inherit", cwd: root, shell: process.platform === "win32" })
+  const r = spawnSync(cmd, args, { stdio: "inherit", cwd: root, env: process.env })
   if (r.status !== 0) process.exit(r.status ?? 1)
 }
 
 console.log("[vercel-build] prisma generate…")
-run("npx", ["prisma", "generate"])
+runPrisma("generate")
 
 if (process.env.QUERYGATE_STORE_URL) {
   console.log("[vercel-build] prisma db push (metadata store)…")
-  run("npx", ["prisma", "db push", "--skip-generate"])
+  runPrisma("db", "push", "--skip-generate")
 } else {
   console.warn("[vercel-build] QUERYGATE_STORE_URL not set — skipping db push (JWT store disabled)")
 }
 
 console.log("[vercel-build] tsc…")
-run("npx", ["tsc"])
+const tscBin = resolve(root, "node_modules", "typescript", "bin", "tsc")
+run(process.execPath, [tscBin])
 
 console.log("[vercel-build] done")

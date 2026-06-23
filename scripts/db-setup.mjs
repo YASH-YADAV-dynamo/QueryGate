@@ -19,15 +19,20 @@ if (!process.env.QUERYGATE_STORE_URL) {
   process.exit(0)
 }
 
-function run(cmd, args) {
-  const r = spawnSync(cmd, args, { stdio: "inherit", cwd: root, shell: process.platform === "win32" })
+function runPrisma(...args) {
+  const prismaCli = resolve(root, "node_modules", "prisma", "build", "index.js")
+  const r = spawnSync(process.execPath, [prismaCli, ...args], {
+    stdio: "inherit",
+    cwd: root,
+    env: process.env,
+  })
   if (r.status !== 0) process.exit(r.status ?? 1)
 }
 
 console.log("[db:setup] prisma generate…")
-run("npx", ["prisma", "generate"])
+runPrisma("generate")
 
 console.log("[db:setup] prisma db push…")
-run("npx", ["prisma", "db push", "--skip-generate"])
+runPrisma("db", "push", "--skip-generate")
 
 console.log("[db:setup] done — connections table ready")
