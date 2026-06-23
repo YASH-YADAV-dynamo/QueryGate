@@ -1,11 +1,13 @@
 import { z } from "zod"
 import { resolveSessionForTool } from "../session/ensure.js"
+import { ACCESS_TOKEN_SCHEMA } from "./core/access-token.js"
 import { defineTool } from "./core/define-tool.js"
 import { toolOk, toolError, isSessionOrError } from "./core/response.js"
 import type { McpToolResult } from "./core/types.js"
 
 export const InsightInputSchema = z.object({
   session_id: z.string().optional(),
+  access_token: z.string().optional(),
   topic: z
     .enum(["cache_stats", "query_history", "session_stats", "pii_report", "schema_summary"])
     .describe("What kind of insight to return"),
@@ -18,6 +20,7 @@ const inputSchema = {
   type: "object" as const,
   properties: {
     session_id: { type: "string" },
+    access_token: ACCESS_TOKEN_SCHEMA,
     topic: {
       type: "string",
       enum: ["cache_stats", "query_history", "session_stats", "pii_report", "schema_summary"],
@@ -28,7 +31,11 @@ const inputSchema = {
 }
 
 export async function handleInsight(args: InsightInput): Promise<McpToolResult> {
-  const resolved = await resolveSessionForTool(args.session_id, args.database_url)
+  const resolved = await resolveSessionForTool(
+    args.session_id,
+    args.database_url,
+    args.access_token,
+  )
   if (isSessionOrError(resolved)) return resolved
   const session = resolved
 

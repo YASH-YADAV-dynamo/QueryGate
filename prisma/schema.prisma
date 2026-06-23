@@ -1,0 +1,21 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("QUERYGATE_STORE_URL")
+}
+
+/// Encrypted user Postgres URLs — survives Vercel serverless cold starts.
+model Connection {
+  id           String    @id @default(cuid())
+  encryptedUrl String    @map("encrypted_db_url")
+  connId       String    @map("conn_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+
+  @@index([connId])
+  @@map("connections")
+}

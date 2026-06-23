@@ -3,12 +3,22 @@ import { randomUUID } from "node:crypto"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
 import { createMcpServer } from "../server.js"
-import { extractDatabaseUrlFromHeaders, runWithDatabaseUrlAsync } from "../context.js"
+import {
+  extractAccessTokenFromHeaders,
+  extractDatabaseUrlFromHeaders,
+  runWithAccessTokenAsync,
+  runWithDatabaseUrlAsync,
+} from "../context.js"
+import {
+  isConnectionStoreEnabled,
+  resolveDatabaseUrlFromToken,
+} from "../store/connection-store.js"
 import { applyCors, handlePreflight } from "./cors.js"
 import { type HttpReq, type HttpRes, resolveDatabaseUrl } from "./database-url.js"
 
 const transports = new Map<string, StreamableHTTPServerTransport>()
 const sessionDatabaseUrls = new Map<string, string>()
+const sessionAccessTokens = new Map<string, string>()
 
 function getSessionId(req: HttpReq): string | undefined {
   const raw = req.headers["mcp-session-id"]
@@ -17,14 +27,27 @@ function getSessionId(req: HttpReq): string | undefined {
   return undefined
 }
 
-function rememberDatabaseUrl(req: HttpReq, sessionId?: string): string | undefined {
-  const fromHeader = extractDatabaseUrlFromHeaders(
-    req.headers as Record<string, string | string[] | undefined>,
-  )
+function rememberCredentials(
+  req: HttpReq,
+  sessionId?: string,
+): { databaseUrl?: string; accessToken?: string } {
+  const headers = req.headers as Record<string, string | string[] | undefined>
+  const accessToken = extractAccessTokenFromHeaders(headers)
+  const fromHeader = extractDatabaseUrlFromHeaders(headers)
+
+  if (accessToken && sessionId) {
+    sessionAccessTokens.set(sessionId, accessToken)
+  }
   if (fromHeader && sessionId) {
     sessionDatabaseUrls.set(sessionId, fromHeader)
   }
-  return resolveDatabaseUrl(req, sessionDatabaseUrls, sessionId)
+
+  const token =
+    accessToken ?? (sessionId ? sessionAccessTokens.get(sessionId) : undefined)
+  const databaseUrl =
+    fromHeader ?? resolveDatabaseUrl(req, sessionDatabaseUrls, sessionId)
+
+  return { databaseUrl, accessToken: token }
 }
 
 async function dispatchMcp(req: HttpReq, res: HttpRes): Promise<void> {
@@ -39,15 +62,16 @@ async function dispatchMcp(req: HttpReq, res: HttpRes): Promise<void> {
     req.body !== undefined &&
     isInitializeRequest(req.body)
   ) {
-    const headerUrl = extractDatabaseUrlFromHeaders(
-      req.headers as Record<string, string | string[] | undefined>,
-    )
+    const headers = req.headers as Record<string, string | string[] | undefined>
+    const headerUrl = extractDatabaseUrlFromHeaders(headers)
+    const headerToken = extractAccessTokenFromHeaders(headers)
 
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sid) => {
         transports.set(sid, transport!)
         if (headerUrl) sessionDatabaseUrls.set(sid, headerUrl)
+        if (headerToken) sessionAccessTokens.set(sid, headerToken)
       },
     })
 
@@ -56,6 +80,7 @@ async function dispatchMcp(req: HttpReq, res: HttpRes): Promise<void> {
       if (sid) {
         transports.delete(sid)
         sessionDatabaseUrls.delete(sid)
+        sessionAccessTokens.delete(sid)
       }
     }
 
@@ -110,6 +135,35 @@ async function dispatchMcp(req: HttpReq, res: HttpRes): Promise<void> {
   }
 }
 
+async function runWithRequestContext(
+  creds: { databaseUrl?: string; accessToken?: string },
+  fn: () => Promise<void>,
+): Promise<void> {
+  if (creds.accessToken && isConnectionStoreEnabled()) {
+    try {
+      const url = await resolveDatabaseUrlFromToken(creds.accessToken)
+      await runWithAccessTokenAsync(creds.accessToken, () =>
+        runWithDatabaseUrlAsync(url, fn),
+      )
+      return
+    } catch {
+      // Fall through to raw URL if token invalid but URL header present
+    }
+  }
+
+  if (creds.databaseUrl) {
+    await runWithDatabaseUrlAsync(creds.databaseUrl, fn)
+    return
+  }
+
+  if (creds.accessToken) {
+    await runWithAccessTokenAsync(creds.accessToken, fn)
+    return
+  }
+
+  await fn()
+}
+
 /** MCP Streamable HTTP — GET/POST/DELETE/OPTIONS (ChatGPT /sse, Cursor /mcp). */
 export async function handleMcpRoute(req: HttpReq, res: HttpRes): Promise<void> {
   applyCors(req, res)
@@ -120,13 +174,8 @@ export async function handleMcpRoute(req: HttpReq, res: HttpRes): Promise<void> 
   }
 
   const sessionId = getSessionId(req)
-  const databaseUrl = rememberDatabaseUrl(req, sessionId)
-
-  if (databaseUrl) {
-    await runWithDatabaseUrlAsync(databaseUrl, () => dispatchMcp(req, res))
-  } else {
-    await dispatchMcp(req, res)
-  }
+  const creds = rememberCredentials(req, sessionId)
+  await runWithRequestContext(creds, () => dispatchMcp(req, res))
 }
 
 export function handleHealth(_req: HttpReq, res: HttpRes): void {
@@ -136,6 +185,7 @@ export function handleHealth(_req: HttpReq, res: HttpRes): void {
     JSON.stringify({
       ok: true,
       service: "querygate",
+      connectionStore: isConnectionStoreEnabled(),
       endpoints: { chatgpt: "/sse", streamableHttp: "/mcp" },
     }),
   )

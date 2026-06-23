@@ -26,6 +26,7 @@ export function applyCors(
       "mcp-session-id",
       "DATABASE_URL",
       "X-Database-Url",
+      "X-QueryGate-Token",
       "Authorization",
     ].join(", "),
   )

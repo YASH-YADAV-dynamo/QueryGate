@@ -19,15 +19,20 @@ Use the live server at **[querygate.vercel.app](https://querygate.vercel.app/)**
 
 In ChatGPT → **Settings → Apps → Create app** → paste the `/sse` URL → **No Auth**.
 
-No database URL needed at setup. **Recommended for ChatGPT:** add a `DATABASE_URL` header in the app settings with your Postgres connection string so every MCP request can reconnect on the server.
+No database URL needed at app setup. **Recommended flow:**
 
-Alternatively, paste your connection string in chat — the AI passes it via `connect` / `database_url`:
+1. Paste your Postgres URL in chat **once** — the AI calls `connect` with `database_url`
+2. QueryGate encrypts the URL in Postgres and returns an **`access_token`** (JWT with connection id only)
+3. ChatGPT uses `access_token` on all later tools — **never sends the raw URL again**
 
 ```
-postgres://user:password@host:5432/mydb
+connect(database_url) → access_token
+execute_sql(access_token, sql) → rows
 ```
 
-QueryGate runs all SQL **on the server** using that URL (Neon, Supabase, RDS, etc.). The AI client never connects to Postgres directly.
+Optional: set `Authorization: Bearer <access_token>` in the ChatGPT app headers after the first connect.
+
+QueryGate runs all SQL **on the server** (Neon, Supabase, RDS, etc.). The AI client never connects to Postgres directly.
 
 Copy-paste JSON: [querygate.vercel.app/setup](https://querygate.vercel.app/setup)
 
@@ -137,16 +142,16 @@ Use a **read-only** Postgres user in production.
 
 | Tool | What it does |
 |------|----------------|
-| `connect` | Load schema, return `session_id` |
+| `connect` | Connect once — returns `access_token` + `session_id` |
 | `schema_reader` | List tables, columns, foreign keys |
 | `execute_sql` | Run a validated SELECT |
 | `set_alias` | Map friendly names to table names |
 | `insight` | Cache stats and query history |
 | `customer_analytics` | Customer dashboard (ChatGPT UI + text fallback) |
 
-Typical flow: `connect` (or set `DATABASE_URL` header) → `schema_reader` → `execute_sql` → AI answers.
+Typical flow: `connect` with `database_url` once → use `access_token` on `schema_reader` → `execute_sql` → AI answers.
 
-On **hosted Vercel**, `session_id` from `connect` may not survive the next request. Pass `DATABASE_URL` as an app header, or include `database_url` on tool calls — the server reconnects automatically.
+On **hosted Vercel**, use `access_token` (JWT) — not `session_id` alone. The JWT contains only a connection id; the encrypted URL lives in Postgres.
 
 ---
 
@@ -154,7 +159,8 @@ On **hosted Vercel**, `session_id` from `connect` may not survive the next reque
 
 | Command | Description |
 |---------|-------------|
-| `npm run build` | Compile to `dist/` |
+| `npm run build` | Prisma generate + compile to `dist/` |
+| `npm run db:push` | Create/update metadata tables in Postgres |
 | `npm start` | Stdio MCP (local clients) |
 | `npm run start:http` | HTTP on port 3000 (`/sse`, `/mcp`) |
 | `npm run dev` | HTTP on port **3000** (hot reload) |
@@ -176,9 +182,21 @@ Add to the `env` block in your MCP config:
 
 ---
 
-## Self-host on Vercel (optional)
+## Self-host on Vercel
 
-Fork the repo → import on [Vercel](https://vercel.com/new) → deploy. Your URLs become `https://YOUR-PROJECT.vercel.app/sse` and `/mcp`. No server env vars needed — users bring their own database URL.
+Fork → import on [Vercel](https://vercel.com/new) → set these **server** env vars:
+
+| Variable | Purpose |
+|----------|---------|
+| `QUERYGATE_STORE_URL` | Postgres for encrypted connection store (Prisma) — use a separate Neon DB |
+| `JWT_SECRET` | Signs access tokens (long random string) |
+| `ENCRYPTION_KEY` | Encrypts user DB URLs at rest (long random string) |
+
+Then run `npm run db:push` locally against that URL once to create tables (or use Prisma migrate in CI).
+
+Deploy → URLs: `https://YOUR-PROJECT.vercel.app/sse` and `/mcp`.
+
+Without these env vars, hosted mode falls back to passing `DATABASE_URL` header on every request (legacy).
 
 ---
 
@@ -188,6 +206,7 @@ Fork the repo → import on [Vercel](https://vercel.com/new) → deploy. Your UR
 |---------|-----|
 | ChatGPT connector fails | Use `/sse` URL, redeploy latest code, no auth required |
 | Server not in client | Fully quit and reopen the MCP client |
-| `Session not found` | On hosted Vercel: add `DATABASE_URL` header to the ChatGPT app, or pass `database_url` on every tool call. `session_id` alone does not persist across serverless requests. |
-| ChatGPT can't query after connect | Set **DATABASE_URL** in app headers (recommended) so each request reconnects server-side. Tools run SQL on QueryGate's server using your URL — not in the browser. |
+| `Session not found` | Use `access_token` from connect, not `session_id` alone. Or set `Authorization: Bearer <token>` header. |
+| ChatGPT can't query after connect | After first `connect`, pass `access_token` on every tool call. Server decrypts URL from Postgres — works across Vercel lambdas. |
+| Connection store errors | Set `QUERYGATE_STORE_URL`, `JWT_SECRET`, `ENCRYPTION_KEY` on Vercel and run `npm run db:push` |
 | Connection refused | Check Postgres is running and reachable from the host running QueryGate |

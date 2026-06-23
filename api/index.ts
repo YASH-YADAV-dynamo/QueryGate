@@ -10,7 +10,23 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
     description: "Read-only PostgreSQL MCP server",
     mcpUrl: `${host}/sse`,
     streamableHttpUrl: `${host}/mcp`,
+    flow: [
+      "1. Call connect with database_url once",
+      "2. Server encrypts URL in Postgres, returns access_token (JWT with connection id only)",
+      "3. Pass access_token on all later tool calls (or Authorization: Bearer header)",
+    ],
     setup: {
+      mcpServers: {
+        querygate: {
+          url: `${host}/sse`,
+          headers: {
+            Authorization: "Bearer <access_token from connect>",
+          },
+        },
+      },
+    },
+    legacySetup: {
+      note: "Without QUERYGATE_STORE_URL on the server, use DATABASE_URL header instead",
       mcpServers: {
         querygate: {
           url: `${host}/sse`,
@@ -20,5 +36,10 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
         },
       },
     },
+    vercelEnv: [
+      "QUERYGATE_STORE_URL — Postgres for encrypted connection store (Prisma)",
+      "JWT_SECRET — signs access tokens",
+      "ENCRYPTION_KEY — encrypts user DB URLs at rest",
+    ],
   })
 }

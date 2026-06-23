@@ -2,12 +2,14 @@ import { z } from "zod"
 import { resolveSessionForTool } from "../session/ensure.js"
 import { buildCustomerAnalyticsDashboard } from "../analytics/customer-metrics.js"
 import { CUSTOMER_ANALYTICS_WIDGET_URI } from "../widgets/customer-analytics-widget.js"
+import { ACCESS_TOKEN_SCHEMA } from "./core/access-token.js"
 import { defineTool } from "./core/define-tool.js"
 import { toolError, toolOkStructured, isSessionOrError } from "./core/response.js"
 import type { McpToolResult } from "./core/types.js"
 
 export const CustomerAnalyticsInputSchema = z.object({
   session_id: z.string().optional().describe("Session ID from connect"),
+  access_token: z.string().optional(),
   database_url: z.string().optional(),
 })
 
@@ -17,6 +19,7 @@ const inputSchema = {
   type: "object" as const,
   properties: {
     session_id: { type: "string", description: "Session ID from connect" },
+    access_token: ACCESS_TOKEN_SCHEMA,
     database_url: { type: "string" },
   },
   required: [],
@@ -25,7 +28,11 @@ const inputSchema = {
 export async function handleCustomerAnalytics(
   args: CustomerAnalyticsInput,
 ): Promise<McpToolResult> {
-  const resolved = await resolveSessionForTool(args.session_id, args.database_url)
+  const resolved = await resolveSessionForTool(
+    args.session_id,
+    args.database_url,
+    args.access_token,
+  )
   if (isSessionOrError(resolved)) return resolved
   const session = resolved
 

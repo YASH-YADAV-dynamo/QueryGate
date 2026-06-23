@@ -1,11 +1,13 @@
 import { z } from "zod"
 import { resolveSessionForTool } from "../session/ensure.js"
+import { ACCESS_TOKEN_SCHEMA } from "./core/access-token.js"
 import { defineTool } from "./core/define-tool.js"
 import { toolOk, toolError, isSessionOrError } from "./core/response.js"
 import type { McpToolResult } from "./core/types.js"
 
 export const SchemaReaderInputSchema = z.object({
   session_id: z.string().optional(),
+  access_token: z.string().optional(),
   filter: z.string().optional().describe("Optional substring to filter table names"),
   database_url: z.string().optional(),
 })
@@ -16,6 +18,7 @@ const inputSchema = {
   type: "object" as const,
   properties: {
     session_id: { type: "string" },
+    access_token: ACCESS_TOKEN_SCHEMA,
     filter: { type: "string", description: "Substring filter for table names" },
     database_url: { type: "string" },
   },
@@ -23,7 +26,11 @@ const inputSchema = {
 }
 
 export async function handleSchemaReader(args: SchemaReaderInput): Promise<McpToolResult> {
-  const resolved = await resolveSessionForTool(args.session_id, args.database_url)
+  const resolved = await resolveSessionForTool(
+    args.session_id,
+    args.database_url,
+    args.access_token,
+  )
   if (isSessionOrError(resolved)) return resolved
   const session = resolved
 

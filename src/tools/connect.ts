@@ -4,6 +4,10 @@ import { inferAliases, addAlias } from "../session/alias-store.js"
 import { getSession } from "../session/manager.js"
 import { config, CONSTANTS } from "../config/index.js"
 import { runWithDatabaseUrlAsync } from "../context.js"
+import {
+  createStoredConnection,
+  isConnectionStoreEnabled,
+} from "../store/connection-store.js"
 import { logger } from "../utils/logger.js"
 import { McpError, toMcpError } from "../utils/error.js"
 import { defineTool } from "./core/define-tool.js"
@@ -15,7 +19,7 @@ const ConnectInputSchema = z.object({
     .string()
     .optional()
     .describe(
-      "REQUIRED for ChatGPT/hosted: user's full Postgres URL (postgres://user:pass@host/db?sslmode=require). Server connects and loads schema from this URL.",
+      "User's full Postgres URL — required once. Server encrypts and stores it; returns access_token for later calls.",
     ),
 })
 
@@ -34,11 +38,16 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
   const databaseUrl = resolveDatabaseUrl(args)
   if (!databaseUrl) {
     return toolError(
-      "database_url is required. Pass the user's full Postgres connection string in this tool call — QueryGate connects server-side (Neon/Vercel) using that URL.",
+      "database_url is required on first connect. Pass the user's full Postgres connection string — QueryGate connects server-side and returns an access_token.",
     )
   }
 
   try {
+    let stored: { connectionId: string; accessToken: string } | undefined
+    if (isConnectionStoreEnabled()) {
+      stored = await createStoredConnection(databaseUrl)
+    }
+
     const session = await ensureConnected(databaseUrl)
     const schema = session.schema
     const liveSession = getSession(session.id)!
@@ -59,16 +68,36 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
     logger.info("Connect complete", {
       sessionId: session.id,
       tables: schema.tables.size,
+      stored: Boolean(stored),
     })
 
-    return toolOk(
-      `Connected to: ${schema.dbName} (PostgreSQL ${schema.version.split(" ")[0]})\n` +
-        `Session ID: ${getReadySessionId(session)}\n` +
-        `\nTables (${schema.tables.size}): ${preview}${overflow}\n` +
-        `PII-flagged tables: ${schema.piiTables.size}\n` +
-        `Auto-inferred aliases: ${autoApplied}\n` +
-        `\nServer connected directly to your database. Use this session_id for schema_reader and execute_sql.`,
-    )
+    const lines = [
+      `Connected to: ${schema.dbName} (PostgreSQL ${schema.version.split(" ")[0]})`,
+      `Session ID: ${getReadySessionId(session)}`,
+      "",
+      `Tables (${schema.tables.size}): ${preview}${overflow}`,
+      `PII-flagged tables: ${schema.piiTables.size}`,
+      `Auto-inferred aliases: ${autoApplied}`,
+    ]
+
+    if (stored) {
+      lines.push(
+        "",
+        `Connection ID: ${stored.connectionId}`,
+        `Access token: ${stored.accessToken}`,
+        "",
+        "Use access_token on all later tool calls (or Authorization: Bearer header).",
+        "Do NOT send database_url again — the server decrypts your URL from Postgres using this token.",
+      )
+    } else {
+      lines.push(
+        "",
+        "Use session_id for schema_reader and execute_sql.",
+        "On hosted Vercel, set QUERYGATE_STORE_URL + JWT_SECRET + ENCRYPTION_KEY for JWT-based reconnect.",
+      )
+    }
+
+    return toolOk(lines.join("\n"))
   } catch (err) {
     const mcpErr = err instanceof McpError ? err : toMcpError(err, "DB_CONNECT_FAILED")
     const hint =
@@ -83,17 +112,18 @@ export const connectTool = defineTool({
   name: "connect",
   description: `Connect QueryGate to the user's PostgreSQL database (server-side).
 
-ALWAYS pass database_url with the user's full connection string when using ChatGPT/hosted MCP.
-The server (Vercel) connects to Neon/Postgres — not the user's browser.
+Pass database_url ONCE with the user's full connection string.
+The server encrypts the URL in Postgres and returns an access_token (JWT with connection id only).
 
-Returns session_id for schema_reader, execute_sql, insight, customer_analytics.`,
+After connect, use access_token on schema_reader, execute_sql, insight, etc.
+ChatGPT should store the token — never send the raw database URL again.`,
   inputSchema: {
     type: "object",
     properties: {
       database_url: {
         type: "string",
         description:
-          "Full Postgres URL: postgres://user:password@host.neon.tech/dbname?sslmode=require",
+          "Full Postgres URL (first connect only): postgres://user:password@host.neon.tech/dbname?sslmode=require",
       },
     },
     required: [],

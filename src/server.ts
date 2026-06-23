@@ -8,8 +8,18 @@ import {
 
 import { ALL_TOOLS, getToolByName } from "./tools/index.js"
 import { getWidgetByUri, WIDGET_RESOURCES } from "./widgets/index.js"
-import { runWithDatabaseUrlAsync } from "./context.js"
+import { runWithAccessTokenAsync, runWithDatabaseUrlAsync } from "./context.js"
+import {
+  isConnectionStoreEnabled,
+  resolveDatabaseUrlFromToken,
+} from "./store/connection-store.js"
 import { logger } from "./utils/logger.js"
+
+function readStringArg(args: unknown, key: string): string | undefined {
+  if (!args || typeof args !== "object") return undefined
+  const value = (args as Record<string, unknown>)[key]
+  return typeof value === "string" ? value : undefined
+}
 
 export function createMcpServer(): Server {
   const server = new Server(
@@ -78,14 +88,20 @@ export function createMcpServer(): Server {
     }
 
     try {
-      const argUrl =
-        args && typeof args === "object" && typeof (args as Record<string, unknown>).database_url === "string"
-          ? ((args as Record<string, unknown>).database_url as string)
-          : undefined
+      const argUrl = readStringArg(args, "database_url")
+      const argToken = readStringArg(args, "access_token")
+
+      if (argToken && isConnectionStoreEnabled()) {
+        const url = await resolveDatabaseUrlFromToken(argToken)
+        return await runWithAccessTokenAsync(argToken, () =>
+          runWithDatabaseUrlAsync(url, runTool),
+        )
+      }
 
       if (argUrl) {
         return await runWithDatabaseUrlAsync(argUrl, runTool)
       }
+
       return await runTool()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

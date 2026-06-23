@@ -1,13 +1,15 @@
 import { z } from "zod"
-import { getSession } from "../session/manager.js"
+import { resolveSessionForTool } from "../session/ensure.js"
 import { addAlias, removeAlias } from "../session/alias-store.js"
 import type { AliasKind } from "../db/types.js"
 import { defineTool } from "./core/define-tool.js"
-import { toolOk, toolError } from "./core/response.js"
+import { ACCESS_TOKEN_SCHEMA } from "./core/access-token.js"
+import { toolOk, toolError, isSessionOrError } from "./core/response.js"
 import type { McpToolResult } from "./core/types.js"
 
 export const SetAliasInputSchema = z.object({
-  session_id: z.string(),
+  session_id: z.string().optional(),
+  access_token: z.string().optional(),
   action: z.enum(["add", "remove", "list"]),
   from: z.string().optional().describe("The term user will say (e.g. 'orders')"),
   to: z.string().optional().describe("The canonical DB name (e.g. 'order_line_items')"),
@@ -23,17 +25,19 @@ const inputSchema = {
   type: "object" as const,
   properties: {
     session_id: { type: "string" },
+    access_token: ACCESS_TOKEN_SCHEMA,
     action: { type: "string", enum: ["add", "remove", "list"] },
     from: { type: "string", description: "Term the user says (e.g. 'orders')" },
     to: { type: "string", description: "Real DB table/column name" },
     kind: { type: "string", enum: ["table", "column", "schema", "expression"] },
   },
-  required: ["session_id", "action"],
+  required: ["action"],
 }
 
 export async function handleSetAlias(args: SetAliasInput): Promise<McpToolResult> {
-  const session = getSession(args.session_id)
-  if (!session) return toolError("Session not found. Call 'connect' first.")
+  const resolved = await resolveSessionForTool(args.session_id, undefined, args.access_token)
+  if (isSessionOrError(resolved)) return resolved
+  const session = resolved
 
   const store = session.aliases
 

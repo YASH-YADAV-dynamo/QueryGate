@@ -8,8 +8,12 @@ import {
   updateSessionStatus,
 } from "./manager.js"
 import { CONSTANTS } from "../config/index.js"
-import { getRequestDatabaseUrl } from "../context.js"
+import { getRequestAccessToken, getRequestDatabaseUrl } from "../context.js"
 import { runWithDatabaseUrlAsync } from "../context.js"
+import {
+  isConnectionStoreEnabled,
+  resolveDatabaseUrlFromToken,
+} from "../store/connection-store.js"
 import { logger } from "../utils/logger.js"
 import { McpError, toMcpError } from "../utils/error.js"
 import type { SessionState } from "../db/types.js"
@@ -57,22 +61,47 @@ export async function ensureConnected(databaseUrl: string): Promise<SessionState
   })
 }
 
-function resolveDatabaseUrlFromContext(explicit?: string): string | undefined {
-  if (explicit) return explicit
+async function resolveUrlFromAccessToken(accessToken: string): Promise<string | undefined> {
+  if (!isConnectionStoreEnabled()) return undefined
+  try {
+    return await resolveDatabaseUrlFromToken(accessToken)
+  } catch (err) {
+    logger.warn("Access token resolution failed", {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return undefined
+  }
+}
+
+async function resolveDatabaseUrlFromContext(
+  explicitUrl?: string,
+  explicitToken?: string,
+): Promise<string | undefined> {
+  if (explicitUrl) return explicitUrl
+
+  const token = explicitToken ?? getRequestAccessToken()
+  if (token) {
+    const fromToken = await resolveUrlFromAccessToken(token)
+    if (fromToken) return fromToken
+  }
+
   const fromRequest = getRequestDatabaseUrl()
   if (fromRequest) return fromRequest
+
   const envUrl = process.env.DATABASE_URL
   if (envUrl) return envUrl
+
   return undefined
 }
 
 /**
  * Resolve a ready session for tool calls.
- * On Vercel/serverless, session_id from a prior lambda may be missing — reconnects using DATABASE_URL.
+ * On Vercel/serverless: use access_token (JWT) or DATABASE_URL to reconnect across lambdas.
  */
 export async function resolveSessionForTool(
   sessionId?: string,
   databaseUrl?: string,
+  accessToken?: string,
 ): Promise<SessionState | McpToolResult> {
   if (sessionId) {
     const byId = getSession(sessionId)
@@ -84,22 +113,26 @@ export async function resolveSessionForTool(
     }
   }
 
-  const url = resolveDatabaseUrlFromContext(databaseUrl)
+  const url = await resolveDatabaseUrlFromContext(databaseUrl, accessToken)
   if (!url) {
-    if (sessionId) {
+    if (sessionId || accessToken) {
       return toolError(
-        "Session expired or not found on this server instance. Call connect again with database_url (your Postgres connection string).",
+        isConnectionStoreEnabled()
+          ? "Session expired on this server instance. Pass access_token from connect, or Authorization: Bearer <token> header."
+          : "Session expired or not found on this server instance. Call connect again with database_url (your Postgres connection string).",
       )
     }
     return toolError(
-      "No database session. Call connect with database_url, or send DATABASE_URL on every MCP request header.",
+      isConnectionStoreEnabled()
+        ? "No database session. Call connect with database_url once — it returns an access_token. Use that token on all later tool calls."
+        : "No database session. Call connect with database_url, or send DATABASE_URL on every MCP request header.",
     )
   }
 
   try {
     const session = await ensureConnected(url)
     if (sessionId && session.id !== sessionId) {
-      logger.info("Session recovered by DATABASE_URL (serverless)", {
+      logger.info("Session recovered (serverless)", {
         requested: sessionId,
         active: session.id,
       })

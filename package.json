@@ -18,17 +18,22 @@
     "test": "bun test --preload ./tests/setup.ts",
     "test:watch": "bun test --preload ./tests/setup.ts --watch",
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "postinstall": "prisma generate",
+    "db:push": "prisma db push",
+    "build": "prisma generate && tsc"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@prisma/client": "^6.9.0",
     "express": "^5.2.1",
+    "jose": "^6.0.11",
     "pg": "^8.13.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/pg": "^8.11.10",
     "@vercel/node": "^5.0.0",
+    "prisma": "^6.9.0",
     "typescript": "^5.6.3",
     "bun-types": "latest"
   }
