@@ -1,5 +1,6 @@
 import { z } from "zod"
-import { getSession } from "../session/manager.js"
+import { getSession, getSessionForDatabaseUrl } from "../session/manager.js"
+import { config } from "../config/index.js"
 import { defineTool } from "./core/define-tool.js"
 import { toolOk, toolError } from "./core/response.js"
 import { executeSqlPipeline } from "./execute-sql.pipeline.js"
@@ -25,7 +26,14 @@ const inputSchema = {
 }
 
 async function handleExecuteSql(args: ExecuteSqlInput): Promise<McpToolResult> {
-  const session = getSession(args.session_id)
+  let session = getSession(args.session_id)
+  if (!session) {
+    try {
+      session = getSessionForDatabaseUrl(config.DATABASE_URL)
+    } catch {
+      // no DATABASE_URL in this context
+    }
+  }
   if (!session) return toolError("Session not found or expired. Call 'connect' first.")
   if (session.status !== "ready") {
     return toolError(`Session not ready: ${session.status}. Wait for connect to complete.`)

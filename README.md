@@ -1,8 +1,12 @@
-# db-mcp-server v2
+# QueryGate
 
 A read-only PostgreSQL MCP server. Your AI client (Cursor, Claude Desktop, Claude Code, ChatGPT) generates SQL — this server validates and executes it safely.
 
 No OpenAI or Anthropic API keys required.
+
+**Hosted:** deploy to Vercel → fixed HTTPS `/mcp` URL (ChatGPT custom app).  
+**Local stdio:** Cursor / Claude Desktop (`DATABASE_URL` in `env`).  
+**Local HTTP:** `npm run start:http` + ngrok for ChatGPT dev testing.
 
 ---
 
@@ -53,11 +57,68 @@ bun install
 
 ---
 
+## Transports
+
+| Mode | Command | Used by |
+|------|---------|---------|
+| **stdio** | `npm start` or `querygate --stdio` | Cursor, Claude Desktop, Claude Code |
+| **HTTP** | `npm run start:http` | Local dev, self-hosted |
+| **HTTPS** | Deploy to Vercel | ChatGPT custom app, remote MCP clients |
+
+Both modes expose the same tools. Credentials always come from `DATABASE_URL` — in the `env` block (stdio) or `headers` block (HTTP/HTTPS).
+
+---
+
 ## 2. MCP client setup
 
 The **same JSON** works in Cursor, Claude Desktop, Claude Code, and ChatGPT Desktop. Only the **file location** differs per app.
 
-`DATABASE_URL` goes in the `env` block — **not** in a `.env` file and **never** in tool calls. The client injects it when it spawns the server.
+### Hosted on Vercel (recommended for teams)
+
+Deploy this repo to Vercel. Every user gets the same endpoint — they only plug in their own `DATABASE_URL` header.
+
+| URL | Purpose |
+|-----|---------|
+| `https://YOUR-APP.vercel.app/mcp` | MCP endpoint |
+| `https://YOUR-APP.vercel.app/` | Setup page with copy-paste config |
+| `https://YOUR-APP.vercel.app/setup` | JSON config with your deploy URL |
+
+```json
+{
+  "mcpServers": {
+    "querygate": {
+      "url": "https://YOUR-APP.vercel.app/mcp",
+      "headers": {
+        "DATABASE_URL": "postgres://user:password@host:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+Each user replaces `DATABASE_URL` with their Postgres connection string. The URL stays the same for everyone.
+
+### ChatGPT custom app
+
+1. Deploy to Vercel (HTTPS) **or** run `npm run start:http` locally and tunnel with [ngrok](https://ngrok.com): `ngrok http 3000`
+2. In ChatGPT → **Settings → Apps → Create app**
+3. Server URL: `https://YOUR-DOMAIN/mcp`
+4. Add header: `DATABASE_URL` = your Postgres connection string
+
+ChatGPT requires **HTTPS** in production. Use Vercel or ngrok — not plain `http://localhost`.
+
+---
+
+### Local stdio (Cursor, Claude Desktop)
+
+`DATABASE_URL` goes in the `env` block — **not** in a `.env` file and **never** in tool calls.
+
+```bash
+npm run build
+npm start          # stdio — default
+# or
+npm run start:http # HTTP on port 3000 → http://localhost:3000/mcp
+```
 
 ### Connection string format
 
@@ -76,9 +137,9 @@ Example: `postgres://readonly:secret@localhost:5432/myapp`
 ```json
 {
   "mcpServers": {
-    "db-mcp": {
+    "querygate": {
       "command": "node",
-      "args": ["/absolute/path/to/db-mcp-v2/dist/index.js"],
+      "args": ["/absolute/path/to/querygate/dist/cli.js", "--stdio"],
       "env": {
         "DATABASE_URL": "postgres://user:password@localhost:5432/mydb"
       }
@@ -87,14 +148,14 @@ Example: `postgres://readonly:secret@localhost:5432/myapp`
 }
 ```
 
-**Development with Bun (no build step):** change `command` to `"bun"` and point `args` at `src/index.ts`:
+**Development with Bun (no build step):** change `command` to `"bun"` and point `args` at `src/cli.ts`:
 
 ```json
 "command": "bun",
-"args": ["/absolute/path/to/db-mcp-v2/src/index.ts"]
+"args": ["/absolute/path/to/querygate/src/cli.ts", "--stdio"]
 ```
 
-On Windows, use escaped backslashes in paths: `"C:\\Users\\YOU\\db-mcp-v2\\dist\\index.js"`. On macOS/Linux, use forward slashes.
+On Windows, use escaped backslashes in paths: `"C:\\Users\\YOU\\db-mcp-v2\\dist\\cli.js"`. On macOS/Linux, use forward slashes.
 
 ---
 
@@ -107,6 +168,7 @@ On Windows, use escaped backslashes in paths: `"C:\\Users\\YOU\\db-mcp-v2\\dist\
 | **Claude Desktop** | `%APPDATA%\Claude\claude_desktop_config.json` (Win) · `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) |
 | **Claude Code** | `~/.claude/mcp.json` |
 | **ChatGPT Desktop** | Settings → Beta → MCP Servers → paste the JSON |
+| **ChatGPT custom app** | Settings → Apps → Create app → URL + `DATABASE_URL` header |
 
 For Claude Desktop, merge the `mcpServers` block into your existing config file if you already have other settings.
 
@@ -114,26 +176,17 @@ Restart the client after saving. Fully quit and reopen — a reload is not enoug
 
 ---
 
-### Remote HTTP (optional)
+## Deploy to Vercel
 
-If you deploy this server behind an HTTP endpoint instead of stdio, use `url` + `headers` instead of `command` + `args`:
+1. Push this repo to GitHub.
+2. Import the project in [Vercel](https://vercel.com/new).
+3. Use default settings — `vercel.json` handles the rest:
+   - `npm run build` compiles TypeScript
+   - `public/` satisfies static output
+   - `/mcp` routes to the serverless MCP handler
+4. Deploy. Your MCP URL is `https://YOUR-APP.vercel.app/mcp`.
 
-```json
-{
-  "mcpServers": {
-    "db-mcp": {
-      "url": "https://your-host.example.com/mcp",
-      "headers": {
-        "DATABASE_URL": "postgres://user:password@host:5432/mydb"
-      }
-    }
-  }
-}
-```
-
-Or reference a system env var: `"DATABASE_URL": "${DATABASE_URL}"`.
-
-> This repo ships a **stdio** server (`dist/index.js`). The config above is for a hosted deployment. For local use, stick with the stdio config in the previous section.
+No `DATABASE_URL` env var needed on Vercel — each user passes it in the MCP client `headers` block.
 
 ---
 

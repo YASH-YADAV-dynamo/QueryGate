@@ -2,10 +2,12 @@
   "name": "db-mcp-server",
   "version": "2.0.0",
   "type": "module",
-  "bin": { "db-mcp": "./src/index.ts" },
+  "bin": { "querygate": "./dist/cli.js" },
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts",
+    "dev": "bun --watch src/cli.ts -- --stdio",
+    "dev:http": "bun --watch src/cli.ts -- --http --port 3000",
+    "start": "node dist/cli.js --stdio",
+    "start:http": "node dist/cli.js --http --port 3000",
     "test": "bun test --preload ./tests/setup.ts",
     "test:watch": "bun test --preload ./tests/setup.ts --watch",
     "typecheck": "tsc --noEmit",
@@ -13,11 +15,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "express": "^5.2.1",
     "pg": "^8.13.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/pg": "^8.11.10",
+    "@vercel/node": "^5.0.0",
     "typescript": "^5.6.3",
     "bun-types": "latest"
   }

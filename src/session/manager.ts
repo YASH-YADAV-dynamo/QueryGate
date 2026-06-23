@@ -4,7 +4,7 @@ import { LRUCache } from "../cache/lru.js"
 import { RingBuffer } from "../cache/ring-buffer.js"
 import { makeAliasStore } from "./alias-store.js"
 import { makeRateLimitState } from "../security/validator.js"
-import { config, CONSTANTS } from "../config/index.js"
+import { CONSTANTS, settings } from "../config/index.js"
 import { logger } from "../utils/logger.js"
 
 // Placeholder empty SchemaStore for initial state
@@ -19,10 +19,12 @@ const EMPTY_SCHEMA = Object.freeze({
 })
 
 // Module-level session store — LRU bounded, max 10 sessions
+const connIndex = new Map<string, string>()
+
 const sessionStore = new LRUCache<string, SessionState>({
   maxItems: CONSTANTS.MAX_SESSIONS,
-  maxBytes: 10 * 1024 * 1024, // 10 MB for session metadata (schemas stored separately)
-  defaultTTL: config.MCP_SESSION_TTL_MS,
+  maxBytes: 10 * 1024 * 1024,
+  defaultTTL: settings.MCP_SESSION_TTL_MS,
   onEvict: (id, _session, reason) => {
     logger.info("Session evicted", { sessionId: id, reason })
   },
@@ -35,9 +37,25 @@ export function makeConnId(databaseUrl: string): string {
   return createHash("sha256").update(databaseUrl).digest("hex").slice(0, 16)
 }
 
-export function createSession(databaseUrl: string): SessionState {
-  const id = randomUUID()
+export function getSessionForDatabaseUrl(databaseUrl: string): SessionState | undefined {
   const connId = makeConnId(databaseUrl)
+  const sessionId = connIndex.get(connId)
+  if (!sessionId) return undefined
+  return getSession(sessionId)
+}
+
+export function createSession(databaseUrl: string): SessionState {
+  const connId = makeConnId(databaseUrl)
+  const existingId = connIndex.get(connId)
+  if (existingId) {
+    const existing = sessionStore.get(existingId)
+    if (existing && existing.status === "ready" && Date.now() <= existing.expiresAt) {
+      existing.lastUsedAt = Date.now()
+      return existing
+    }
+  }
+
+  const id = randomUUID()
   const now = Date.now()
 
   const session: SessionState = {
@@ -46,7 +64,7 @@ export function createSession(databaseUrl: string): SessionState {
     status: "pending",
     createdAt: now,
     lastUsedAt: now,
-    expiresAt: now + config.MCP_SESSION_TTL_MS,
+    expiresAt: now + settings.MCP_SESSION_TTL_MS,
     schema: EMPTY_SCHEMA,
     aliases: makeAliasStore(),
     cache: {
@@ -75,6 +93,7 @@ export function createSession(databaseUrl: string): SessionState {
 
   sessionStore.set(id, session)
   rateLimits.set(id, makeRateLimitState())
+  connIndex.set(connId, id)
   logger.info("Session created", { sessionId: id, connId })
   return session
 }
@@ -85,6 +104,7 @@ export function getSession(id: string): SessionState | undefined {
 
   // Check TTL manually too
   if (Date.now() > session.expiresAt) {
+    connIndex.delete(session.connId)
     sessionStore.delete(id)
     rateLimits.delete(id)
     return undefined
@@ -106,6 +126,8 @@ export function getRateLimit(sessionId: string) {
 }
 
 export function destroySession(id: string): void {
+  const session = sessionStore.get(id)
+  if (session) connIndex.delete(session.connId)
   sessionStore.delete(id)
   rateLimits.delete(id)
   logger.info("Session destroyed", { sessionId: id })

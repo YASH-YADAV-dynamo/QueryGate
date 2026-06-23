@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QueryGate — PostgreSQL MCP</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+        color: #111;
+      }
+      code,
+      pre {
+        background: #f4f4f5;
+        border-radius: 6px;
+      }
+      pre {
+        padding: 1rem;
+        overflow-x: auto;
+      }
+      h1 {
+        margin-bottom: 0.25rem;
+      }
+      .muted {
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>QueryGate</h1>
+    <p class="muted">Read-only PostgreSQL MCP — your AI writes SQL, we validate and run it.</p>
+
+    <h2>ChatGPT custom app</h2>
+    <p>
+      Settings → Apps → Create app → Server URL: <code id="mcp-url-chatgpt"></code><br />
+      Add header <code>DATABASE_URL</code> with your Postgres connection string.
+    </p>
+
+    <h2>Local stdio (Cursor, Claude Desktop)</h2>
+    <pre><code>{
+  "mcpServers": {
+    "querygate": {
+      "command": "node",
+      "args": ["/path/to/querygate/dist/cli.js", "--stdio"],
+      "env": {
+        "DATABASE_URL": "postgres://user:password@host:5432/mydb"
+      }
+    }
+  }
+}</code></pre>
+
+    <h2>Remote MCP (HTTPS)</h2>
+    <p>Use this fixed URL in any remote MCP client:</p>
+    <pre><code id="mcp-url">/mcp</code></pre>
+
+    <h2>Client config</h2>
+    <p>Same JSON for every app — replace <code>DATABASE_URL</code> with your Postgres connection string:</p>
+    <pre><code id="config">{
+  "mcpServers": {
+    "querygate": {
+      "url": "https://YOUR-DOMAIN/mcp",
+      "headers": {
+        "DATABASE_URL": "postgres://user:password@host:5432/mydb"
+      }
+    }
+  }
+}</code></pre>
+
+    <p>JSON with your deploy URL: <a href="/setup">/setup</a></p>
+    <script>
+      const origin = window.location.origin
+      document.getElementById("mcp-url").textContent = origin + "/mcp"
+      document.getElementById("mcp-url-chatgpt").textContent = origin + "/mcp"
+      document.getElementById("config").textContent = document
+        .getElementById("config")
+        .textContent.replace("https://YOUR-DOMAIN/mcp", origin + "/mcp")
+    </script>
+  </body>
+</html>

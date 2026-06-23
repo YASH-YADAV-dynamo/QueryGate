@@ -1,27 +1,46 @@
 import { z } from "zod"
+import { getRequestDatabaseUrl } from "../context.js"
 
-// DATABASE_URL comes from mcp.json env block — never a .env file
-// The MCP client (Claude Desktop, Cursor, ChatGPT) injects it at startup
-const ConfigSchema = z.object({
-  DATABASE_URL: z.string().min(1, "DATABASE_URL must be set in mcp.json env block"),
+const SettingsSchema = z.object({
+  DATABASE_URL: z.string().optional(),
   MCP_SESSION_TTL_MS: z.coerce.number().default(7_200_000),
   MCP_MAX_ROWS: z.coerce.number().default(500),
   MCP_QUERY_TIMEOUT_MS: z.coerce.number().default(10_000),
   MCP_RATE_LIMIT: z.coerce.number().default(30),
 })
 
-function loadConfig() {
-  const result = ConfigSchema.safeParse(process.env)
-  if (!result.success) {
-    const missing = result.error.errors.map((e) => e.message).join(", ")
-    // Write to stderr — MCP stdout must stay clean for protocol messages
-    process.stderr.write(`[db-mcp] Config error: ${missing}\n`)
-    process.exit(1)
-  }
-  return result.data
+export const settings = SettingsSchema.parse(process.env)
+
+export function getDatabaseUrl(): string {
+  const fromRequest = getRequestDatabaseUrl()
+  if (fromRequest) return fromRequest
+
+  const envUrl = settings.DATABASE_URL ?? process.env.DATABASE_URL
+  if (envUrl) return envUrl
+
+  throw new Error(
+    "DATABASE_URL must be set in the MCP env block (stdio) or DATABASE_URL / X-Database-Url header (HTTP)",
+  )
 }
 
-export const config = loadConfig()
+/** Lazy config — DATABASE_URL may come from per-request headers on Vercel. */
+export const config = {
+  get DATABASE_URL() {
+    return getDatabaseUrl()
+  },
+  get MCP_SESSION_TTL_MS() {
+    return settings.MCP_SESSION_TTL_MS
+  },
+  get MCP_MAX_ROWS() {
+    return settings.MCP_MAX_ROWS
+  },
+  get MCP_QUERY_TIMEOUT_MS() {
+    return settings.MCP_QUERY_TIMEOUT_MS
+  },
+  get MCP_RATE_LIMIT() {
+    return settings.MCP_RATE_LIMIT
+  },
+}
 
 export const CONSTANTS = {
   SCHEMA_CACHE_TTL_MS: 30 * 60 * 1000,
@@ -35,3 +54,12 @@ export const CONSTANTS = {
   ALIAS_CONFIDENCE_THRESHOLD: 0.7,
   MAX_ALIASES: 200,
 } as const
+
+export function requireEnvDatabaseUrl(): void {
+  if (!process.env.DATABASE_URL) {
+    process.stderr.write(
+      "[querygate] Config error: DATABASE_URL must be set in mcp.json env block\n",
+    )
+    process.exit(1)
+  }
+}
