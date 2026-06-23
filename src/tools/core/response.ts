@@ -27,3 +27,9 @@ export function getToolText(result: McpToolResult): string {
 export function isToolError(result: McpToolResult): boolean {
   return getToolText(result).startsWith("ERROR:")
 }
+
+export function isSessionOrError(
+  result: import("../../db/types.js").SessionState | McpToolResult,
+): result is McpToolResult {
+  return "content" in result
+}

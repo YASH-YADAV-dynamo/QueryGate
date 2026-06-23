@@ -1,12 +1,11 @@
 import { z } from "zod"
-import { getOrCreatePool } from "../db/connector.js"
-import { buildSchemaStore } from "../rag/schema-pipeline.js"
+import { ensureConnected, getReadySessionId } from "../session/ensure.js"
 import { inferAliases, addAlias } from "../session/alias-store.js"
-import { createSession, updateSessionStatus, getSession } from "../session/manager.js"
+import { getSession } from "../session/manager.js"
 import { config, CONSTANTS } from "../config/index.js"
 import { runWithDatabaseUrlAsync } from "../context.js"
 import { logger } from "../utils/logger.js"
-import { toMcpError, McpError } from "../utils/error.js"
+import { McpError, toMcpError } from "../utils/error.js"
 import { defineTool } from "./core/define-tool.js"
 import { toolOk, toolError } from "./core/response.js"
 import type { McpToolResult } from "./core/types.js"
@@ -16,7 +15,7 @@ const ConnectInputSchema = z.object({
     .string()
     .optional()
     .describe(
-      "PostgreSQL connection string (postgres://user:pass@host:5432/db). Required when DATABASE_URL is not in env/headers.",
+      "REQUIRED for ChatGPT/hosted: user's full Postgres URL (postgres://user:pass@host/db?sslmode=require). Server connects and loads schema from this URL.",
     ),
 })
 
@@ -35,90 +34,66 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
   const databaseUrl = resolveDatabaseUrl(args)
   if (!databaseUrl) {
     return toolError(
-      "No database configured. Ask the user for their Postgres connection string, then call connect again with database_url (postgres://user:pass@host:5432/db).",
+      "database_url is required. Pass the user's full Postgres connection string in this tool call — QueryGate connects server-side (Neon/Vercel) using that URL.",
     )
   }
 
-  return runWithDatabaseUrlAsync(databaseUrl, async () => {
-    const session = createSession(databaseUrl)
+  try {
+    const session = await ensureConnected(databaseUrl)
+    const schema = session.schema
+    const liveSession = getSession(session.id)!
 
-    try {
-      updateSessionStatus(session.id, "connecting")
-      const pool = await getOrCreatePool(databaseUrl)
-
-      updateSessionStatus(session.id, "schema_load")
-      const schema = await buildSchemaStore(pool)
-
-      const liveSession = getSession(session.id)!
-      liveSession.schema = schema
-
-      const inferred = inferAliases(schema)
-      let autoApplied = 0
-      for (const alias of inferred) {
-        if (alias.confidence >= CONSTANTS.ALIAS_CONFIDENCE_THRESHOLD) {
-          const result = addAlias(liveSession.aliases, alias)
-          if (result.ok) autoApplied++
-        }
+    let autoApplied = 0
+    const inferred = inferAliases(schema)
+    for (const alias of inferred) {
+      if (alias.confidence >= CONSTANTS.ALIAS_CONFIDENCE_THRESHOLD) {
+        const result = addAlias(liveSession.aliases, alias)
+        if (result.ok) autoApplied++
       }
-
-      updateSessionStatus(session.id, "ready")
-
-      const tableList = Array.from(schema.tables.keys())
-      const preview = tableList.slice(0, 15).join(", ")
-      const overflow = tableList.length > 15 ? ` … +${tableList.length - 15} more` : ""
-
-      logger.info("Connect complete", {
-        sessionId: session.id,
-        tables: schema.tables.size,
-        piiTables: schema.piiTables.size,
-      })
-
-      return toolOk(
-        `Connected to: ${schema.dbName} (PostgreSQL ${schema.version.split(" ")[0]})\n` +
-          `Session ID: ${session.id}\n` +
-          `\nTables (${schema.tables.size}): ${preview}${overflow}\n` +
-          `PII-flagged tables: ${schema.piiTables.size}\n` +
-          `Auto-inferred aliases: ${autoApplied}\n` +
-          `\nNext steps:\n` +
-          `  → Call schema_reader to explore table structures\n` +
-          `  → Call execute_sql with SELECT queries\n` +
-          `  → Call set_alias to map friendly names to real table names`,
-      )
-    } catch (err) {
-      const mcpErr = err instanceof McpError ? err : toMcpError(err, "DB_CONNECT_FAILED")
-      updateSessionStatus(session.id, "error", mcpErr.message)
-      const hint =
-        mcpErr.code === "SCHEMA_BUILD_FAILED"
-          ? "\n\nNeon: wake project in console, run seed/demo.sql if empty, retry connect with database_url."
-          : mcpErr.code === "DB_CONNECT_FAILED"
-            ? "\n\nUse postgres://USER:PASS@HOST/DB?sslmode=require (Neon pooled URL recommended)."
-            : ""
-      return toolError(`Connection failed: ${mcpErr.message}${hint}`)
     }
-  })
+
+    const tableList = Array.from(schema.tables.keys())
+    const preview = tableList.slice(0, 15).join(", ")
+    const overflow = tableList.length > 15 ? ` … +${tableList.length - 15} more` : ""
+
+    logger.info("Connect complete", {
+      sessionId: session.id,
+      tables: schema.tables.size,
+    })
+
+    return toolOk(
+      `Connected to: ${schema.dbName} (PostgreSQL ${schema.version.split(" ")[0]})\n` +
+        `Session ID: ${getReadySessionId(session)}\n` +
+        `\nTables (${schema.tables.size}): ${preview}${overflow}\n` +
+        `PII-flagged tables: ${schema.piiTables.size}\n` +
+        `Auto-inferred aliases: ${autoApplied}\n` +
+        `\nServer connected directly to your database. Use this session_id for schema_reader and execute_sql.`,
+    )
+  } catch (err) {
+    const mcpErr = err instanceof McpError ? err : toMcpError(err, "DB_CONNECT_FAILED")
+    const hint =
+      mcpErr.code === "SCHEMA_BUILD_FAILED"
+        ? "\n\nEnsure tables exist in Neon and the project is not suspended."
+        : "\n\nUse Neon pooled URL with ?sslmode=require"
+    return toolError(`Connection failed: ${mcpErr.message}${hint}`)
+  }
 }
 
 export const connectTool = defineTool({
   name: "connect",
-  description: `Connect to a PostgreSQL database and load its schema into memory.
+  description: `Connect QueryGate to the user's PostgreSQL database (server-side).
 
-Provide database_url when the user gives you their Postgres connection string in chat.
-If DATABASE_URL is already in env (stdio) or headers (HTTP), you can omit database_url.
+ALWAYS pass database_url with the user's full connection string when using ChatGPT/hosted MCP.
+The server (Vercel) connects to Neon/Postgres — not the user's browser.
 
-Returns:
-- session_id: pass this to all subsequent tool calls
-- List of tables found
-- PII-flagged table count
-- Auto-inferred aliases
-
-Call this once at the start of a conversation.`,
+Returns session_id for schema_reader, execute_sql, insight, customer_analytics.`,
   inputSchema: {
     type: "object",
     properties: {
       database_url: {
         type: "string",
         description:
-          "postgres://user:password@host:5432/database — from the user when not pre-configured",
+          "Full Postgres URL: postgres://user:password@host.neon.tech/dbname?sslmode=require",
       },
     },
     required: [],

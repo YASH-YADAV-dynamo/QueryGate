@@ -2,13 +2,16 @@ import { describe, expect, test } from "bun:test"
 import { handleSchemaReader } from "../../src/tools/schema-reader.js"
 import { getToolText, isToolError } from "../../src/tools/core/response.js"
 import { createReadySession } from "../helpers/session.js"
+import { withoutDatabaseUrl } from "../helpers/env.js"
 import { buildMockSchema } from "../helpers/fixtures.js"
 
 describe("schema-reader handler", () => {
   test("returns error when session is missing", async () => {
-    const result = await handleSchemaReader({ session_id: "nonexistent" })
-    expect(isToolError(result)).toBe(true)
-    expect(getToolText(result)).toContain("Session not found")
+    await withoutDatabaseUrl(async () => {
+      const result = await handleSchemaReader({ session_id: "nonexistent" })
+      expect(isToolError(result)).toBe(true)
+      expect(getToolText(result)).toContain("Session expired or not found")
+    })
   })
 
   test("lists all tables with columns and metadata", async () => {

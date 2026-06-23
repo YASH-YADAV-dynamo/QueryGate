@@ -1,6 +1,7 @@
 import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test"
 import { getToolText, isToolError } from "../../src/tools/core/response.js"
 import { createReadySession } from "../helpers/session.js"
+import { withoutDatabaseUrl } from "../helpers/env.js"
 import { updateSessionStatus } from "../../src/session/manager.js"
 
 const mockPipeline = mock(() =>
@@ -41,12 +42,14 @@ describe("execute-sql handler", () => {
   })
 
   test("returns error when session is missing", async () => {
-    const result = await handleExecuteSql({
-      session_id: "missing",
-      sql: "SELECT 1",
+    await withoutDatabaseUrl(async () => {
+      const result = await handleExecuteSql({
+        session_id: "missing",
+        sql: "SELECT 1",
+      })
+      expect(isToolError(result)).toBe(true)
+      expect(getToolText(result)).toContain("Session expired or not found")
     })
-    expect(isToolError(result)).toBe(true)
-    expect(getToolText(result)).toContain("Session not found")
   })
 
   test("returns error when session is not ready", async () => {

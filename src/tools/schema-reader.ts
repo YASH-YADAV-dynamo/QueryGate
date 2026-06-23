@@ -1,12 +1,13 @@
 import { z } from "zod"
-import { getSession } from "../session/manager.js"
+import { resolveSessionForTool } from "../session/ensure.js"
 import { defineTool } from "./core/define-tool.js"
-import { toolOk, toolError } from "./core/response.js"
+import { toolOk, toolError, isSessionOrError } from "./core/response.js"
 import type { McpToolResult } from "./core/types.js"
 
 export const SchemaReaderInputSchema = z.object({
-  session_id: z.string(),
+  session_id: z.string().optional(),
   filter: z.string().optional().describe("Optional substring to filter table names"),
+  database_url: z.string().optional(),
 })
 
 export type SchemaReaderInput = z.infer<typeof SchemaReaderInputSchema>
@@ -16,13 +17,15 @@ const inputSchema = {
   properties: {
     session_id: { type: "string" },
     filter: { type: "string", description: "Substring filter for table names" },
+    database_url: { type: "string" },
   },
-  required: ["session_id"],
+  required: [],
 }
 
 export async function handleSchemaReader(args: SchemaReaderInput): Promise<McpToolResult> {
-  const session = getSession(args.session_id)
-  if (!session) return toolError("Session not found. Call 'connect' first.")
+  const resolved = await resolveSessionForTool(args.session_id, args.database_url)
+  if (isSessionOrError(resolved)) return resolved
+  const session = resolved
 
   const schema = session.schema
   const tables = Array.from(schema.tables.values()).filter(

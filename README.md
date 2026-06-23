@@ -19,11 +19,15 @@ Use the live server at **[querygate.vercel.app](https://querygate.vercel.app/)**
 
 In ChatGPT → **Settings → Apps → Create app** → paste the `/sse` URL → **No Auth**.
 
-No database URL needed at setup. In chat, paste your Postgres connection string and ask the AI to connect:
+No database URL needed at setup. **Recommended for ChatGPT:** add a `DATABASE_URL` header in the app settings with your Postgres connection string so every MCP request can reconnect on the server.
+
+Alternatively, paste your connection string in chat — the AI passes it via `connect` / `database_url`:
 
 ```
 postgres://user:password@host:5432/mydb
 ```
+
+QueryGate runs all SQL **on the server** using that URL (Neon, Supabase, RDS, etc.). The AI client never connects to Postgres directly.
 
 Copy-paste JSON: [querygate.vercel.app/setup](https://querygate.vercel.app/setup)
 
@@ -140,7 +144,9 @@ Use a **read-only** Postgres user in production.
 | `insight` | Cache stats and query history |
 | `customer_analytics` | Customer dashboard (ChatGPT UI + text fallback) |
 
-Typical flow: `connect` → `schema_reader` → `execute_sql` → AI answers.
+Typical flow: `connect` (or set `DATABASE_URL` header) → `schema_reader` → `execute_sql` → AI answers.
+
+On **hosted Vercel**, `session_id` from `connect` may not survive the next request. Pass `DATABASE_URL` as an app header, or include `database_url` on tool calls — the server reconnects automatically.
 
 ---
 
@@ -182,5 +188,6 @@ Fork the repo → import on [Vercel](https://vercel.com/new) → deploy. Your UR
 |---------|-----|
 | ChatGPT connector fails | Use `/sse` URL, redeploy latest code, no auth required |
 | Server not in client | Fully quit and reopen the MCP client |
-| `Session not found` | Call `connect` first |
+| `Session not found` | On hosted Vercel: add `DATABASE_URL` header to the ChatGPT app, or pass `database_url` on every tool call. `session_id` alone does not persist across serverless requests. |
+| ChatGPT can't query after connect | Set **DATABASE_URL** in app headers (recommended) so each request reconnects server-side. Tools run SQL on QueryGate's server using your URL — not in the browser. |
 | Connection refused | Check Postgres is running and reachable from the host running QueryGate |

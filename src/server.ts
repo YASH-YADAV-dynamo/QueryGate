@@ -8,6 +8,7 @@ import {
 
 import { ALL_TOOLS, getToolByName } from "./tools/index.js"
 import { getWidgetByUri, WIDGET_RESOURCES } from "./widgets/index.js"
+import { runWithDatabaseUrlAsync } from "./context.js"
 import { logger } from "./utils/logger.js"
 
 export function createMcpServer(): Server {
@@ -64,7 +65,7 @@ export function createMcpServer(): Server {
 
     logger.info("Tool called", { tool: name })
 
-    try {
+    const runTool = async () => {
       const result = await tool.handler(args as never)
       const response: Record<string, unknown> = {
         content: result.content,
@@ -74,6 +75,18 @@ export function createMcpServer(): Server {
       const meta = result._meta ?? tool.meta
       if (meta) response._meta = meta
       return response
+    }
+
+    try {
+      const argUrl =
+        args && typeof args === "object" && typeof (args as Record<string, unknown>).database_url === "string"
+          ? ((args as Record<string, unknown>).database_url as string)
+          : undefined
+
+      if (argUrl) {
+        return await runWithDatabaseUrlAsync(argUrl, runTool)
+      }
+      return await runTool()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       logger.error("Tool error", { tool: name, error: msg })

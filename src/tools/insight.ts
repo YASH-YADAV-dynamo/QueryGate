@@ -1,14 +1,15 @@
 import { z } from "zod"
-import { getSession } from "../session/manager.js"
+import { resolveSessionForTool } from "../session/ensure.js"
 import { defineTool } from "./core/define-tool.js"
-import { toolOk, toolError } from "./core/response.js"
+import { toolOk, toolError, isSessionOrError } from "./core/response.js"
 import type { McpToolResult } from "./core/types.js"
 
 export const InsightInputSchema = z.object({
-  session_id: z.string(),
+  session_id: z.string().optional(),
   topic: z
     .enum(["cache_stats", "query_history", "session_stats", "pii_report", "schema_summary"])
     .describe("What kind of insight to return"),
+  database_url: z.string().optional(),
 })
 
 export type InsightInput = z.infer<typeof InsightInputSchema>
@@ -21,13 +22,15 @@ const inputSchema = {
       type: "string",
       enum: ["cache_stats", "query_history", "session_stats", "pii_report", "schema_summary"],
     },
+    database_url: { type: "string" },
   },
-  required: ["session_id", "topic"],
+  required: ["topic"],
 }
 
 export async function handleInsight(args: InsightInput): Promise<McpToolResult> {
-  const session = getSession(args.session_id)
-  if (!session) return toolError("Session not found.")
+  const resolved = await resolveSessionForTool(args.session_id, args.database_url)
+  if (isSessionOrError(resolved)) return resolved
+  const session = resolved
 
   switch (args.topic) {
     case "cache_stats": {

@@ -1,13 +1,14 @@
 import { z } from "zod"
-import { getSession } from "../session/manager.js"
+import { resolveSessionForTool } from "../session/ensure.js"
 import { buildCustomerAnalyticsDashboard } from "../analytics/customer-metrics.js"
 import { CUSTOMER_ANALYTICS_WIDGET_URI } from "../widgets/customer-analytics-widget.js"
 import { defineTool } from "./core/define-tool.js"
-import { toolError, toolOkStructured } from "./core/response.js"
+import { toolError, toolOkStructured, isSessionOrError } from "./core/response.js"
 import type { McpToolResult } from "./core/types.js"
 
 export const CustomerAnalyticsInputSchema = z.object({
-  session_id: z.string().describe("Session ID from connect"),
+  session_id: z.string().optional().describe("Session ID from connect"),
+  database_url: z.string().optional(),
 })
 
 export type CustomerAnalyticsInput = z.infer<typeof CustomerAnalyticsInputSchema>
@@ -16,18 +17,17 @@ const inputSchema = {
   type: "object" as const,
   properties: {
     session_id: { type: "string", description: "Session ID from connect" },
+    database_url: { type: "string" },
   },
-  required: ["session_id"],
+  required: [],
 }
 
 export async function handleCustomerAnalytics(
   args: CustomerAnalyticsInput,
 ): Promise<McpToolResult> {
-  const session = getSession(args.session_id)
-  if (!session) return toolError("Session not found. Call connect first.")
-  if (session.status !== "ready") {
-    return toolError(`Session not ready (${session.status}). Wait for connect to finish.`)
-  }
+  const resolved = await resolveSessionForTool(args.session_id, args.database_url)
+  if (isSessionOrError(resolved)) return resolved
+  const session = resolved
 
   const dashboard = await buildCustomerAnalyticsDashboard(session)
 
