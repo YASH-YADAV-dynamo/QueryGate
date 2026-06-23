@@ -4,6 +4,8 @@
  *   querygate --http      HTTP server for ChatGPT custom app (use ngrok/Vercel for HTTPS)
  */
 
+import "./load-env.js"
+
 const args = process.argv.slice(2)
 
 function hasFlag(flag: string): boolean {

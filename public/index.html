@@ -41,17 +41,17 @@
     <p>
       Settings → Apps → Create app → Server URL:
       <code id="sse-url">https://querygate.vercel.app/sse</code><br />
-      Add header <code>DATABASE_URL</code> with your Postgres connection string, or paste the URL in chat and let the app pass it as a header.
+      Paste your Postgres URL in chat once — the AI calls <code>connect</code> and gets an
+      <code>access_token</code>. Use that JWT on all later requests (no raw URL in headers).
     </p>
 
-    <h2>Remote MCP config</h2>
-    <p>Replace <code>DATABASE_URL</code> with your Postgres connection string:</p>
+    <h2>After connect — optional header</h2>
     <pre><code id="config">{
   "mcpServers": {
     "querygate": {
       "url": "https://querygate.vercel.app/sse",
       "headers": {
-        "DATABASE_URL": "postgres://user:password@host:5432/mydb"
+        "Authorization": "Bearer &lt;access_token from connect&gt;"
       }
     }
   }

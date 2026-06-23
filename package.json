@@ -10,30 +10,36 @@
   "type": "module",
   "bin": { "querygate": "./dist/cli.js" },
   "scripts": {
-    "dev": "bun --watch src/cli.ts -- --http --port 3000",
+    "dev": "node scripts/db-setup.mjs && bun --watch src/cli.ts -- --http --port 3000",
+    "dev:quick": "bun --watch src/cli.ts -- --http --port 3000",
     "dev:stdio": "bun --watch src/cli.ts -- --stdio",
-    "dev:http": "bun --watch src/cli.ts -- --http --port 3000",
+    "dev:http": "npm run dev",
     "start": "node dist/cli.js --stdio",
     "start:http": "node dist/cli.js --http --port 3000",
     "test": "bun test --preload ./tests/setup.ts",
     "test:watch": "bun test --preload ./tests/setup.ts --watch",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "build": "prisma generate && tsc"
+    "db:setup": "node scripts/db-setup.mjs",
+    "db:studio": "prisma studio",
+    "build": "prisma generate && tsc",
+    "vercel-build": "node scripts/vercel-build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@prisma/client": "^6.9.0",
+    "dotenv": "^16.5.0",
     "express": "^5.2.1",
     "jose": "^6.0.11",
     "pg": "^8.13.0",
+    "prisma": "^6.9.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/pg": "^8.11.10",
     "@vercel/node": "^5.0.0",
-    "prisma": "^6.9.0",
     "typescript": "^5.6.3",
     "bun-types": "latest"
   }

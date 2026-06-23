@@ -163,7 +163,10 @@ On **hosted Vercel**, use `access_token` (JWT) — not `session_id` alone. The J
 | `npm run db:push` | Create/update metadata tables in Postgres |
 | `npm start` | Stdio MCP (local clients) |
 | `npm run start:http` | HTTP on port 3000 (`/sse`, `/mcp`) |
-| `npm run dev` | HTTP on port **3000** (hot reload) |
+| `npm run dev` | Push Prisma schema to `QUERYGATE_STORE_URL`, then HTTP on port 3000 |
+| `npm run dev:quick` | HTTP dev server only (no db push) |
+| `npm run db:setup` | `prisma generate` + `db push` (creates `connections` table) |
+| `npm run db:studio` | Open Prisma Studio on metadata DB |
 | `npm run dev:stdio` | Stdio MCP (for Cursor/Claude subprocess testing) |
 | `npm run dev:http` | Same as `npm run dev` |
 | `npm test` | Run tests |
@@ -192,9 +195,15 @@ Fork → import on [Vercel](https://vercel.com/new) → set these **server** env
 | `JWT_SECRET` | Signs access tokens (long random string) |
 | `ENCRYPTION_KEY` | Encrypts user DB URLs at rest (long random string) |
 
-Then run `npm run db:push` locally against that URL once to create tables (or use Prisma migrate in CI).
+Then run locally once (uses `.env`):
 
-Deploy → URLs: `https://YOUR-PROJECT.vercel.app/sse` and `/mcp`.
+```bash
+npm run db:setup
+```
+
+Or just `npm run dev` — it runs `db:setup` automatically before starting the server.
+
+Deploy → URLs: `https://YOUR-PROJECT.vercel.app/sse` and `/mcp`. Vercel build runs `prisma db push` when `QUERYGATE_STORE_URL` is set in project env.
 
 Without these env vars, hosted mode falls back to passing `DATABASE_URL` header on every request (legacy).
 

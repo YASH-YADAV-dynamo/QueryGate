@@ -1,5 +1,6 @@
 import { createHttpApp } from "./app.js"
 import { printStartup } from "../utils/startup.js"
+import { isConnectionStoreEnabled } from "../store/connection-store.js"
 
 export interface HttpServerOptions {
   port?: number
@@ -24,6 +25,9 @@ export async function startHttpServer(options: HttpServerOptions = {}): Promise<
     `ChatGPT  → ${base}/sse`,
     `Cursor   → ${base}/mcp`,
     `health   → ${base}/health`,
+    isConnectionStoreEnabled()
+      ? "store    → Postgres connection store enabled (JWT tokens)"
+      : "store    → off (set QUERYGATE_STORE_URL + JWT_SECRET + ENCRYPTION_KEY in .env)",
     "tunnel for ChatGPT: ngrok http " + port,
   ])
 }

@@ -47,7 +47,10 @@ function rememberCredentials(
   const databaseUrl =
     fromHeader ?? resolveDatabaseUrl(req, sessionDatabaseUrls, sessionId)
 
-  return { databaseUrl, accessToken: token }
+  const result: { databaseUrl?: string; accessToken?: string } = {}
+  if (databaseUrl) result.databaseUrl = databaseUrl
+  if (token) result.accessToken = token
+  return result
 }
 
 async function dispatchMcp(req: HttpReq, res: HttpRes): Promise<void> {
