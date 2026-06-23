@@ -1,6 +1,7 @@
 import type pg from "pg"
 import type { ColumnMeta, TableMeta } from "./types.js"
 import { PII_PATTERNS } from "../security/pii-detector.js"
+import { safeInspectQuery } from "./schema-samples.js"
 
 const INSPECT_COLUMNS_SQL = `
   SELECT
@@ -94,30 +95,36 @@ interface RawIndex {
 }
 
 export async function inspectSchema(pool: pg.Pool): Promise<RawSchema> {
-  const [cols, fks, rows, idxs, dbMeta] = await Promise.all([
-    pool.query<RawColumn>(INSPECT_COLUMNS_SQL),
-    pool.query<RawFK>(INSPECT_FK_SQL),
-    pool.query<{ table_schema: string; table_name: string; row_estimate: string }>(
+  const [cols, fks, rows, idxs, dbMetaRows] = await Promise.all([
+    safeInspectQuery<RawColumn>(pool, "columns", INSPECT_COLUMNS_SQL, []),
+    safeInspectQuery<RawFK>(pool, "foreign_keys", INSPECT_FK_SQL, []),
+    safeInspectQuery<{ table_schema: string; table_name: string; row_estimate: string }>(
+      pool,
+      "row_counts",
       INSPECT_ROWCOUNTS_SQL,
+      [],
     ),
-    pool.query<RawIndex>(INSPECT_INDEXES_SQL),
-    pool.query<{ db: string; ver: string }>(
+    safeInspectQuery<RawIndex>(pool, "indexes", INSPECT_INDEXES_SQL, []),
+    safeInspectQuery<{ db: string; ver: string }>(
+      pool,
+      "db_meta",
       "SELECT current_database() AS db, version() AS ver",
+      [{ db: "unknown", ver: "unknown" }],
     ),
   ])
 
   const rowCounts = new Map<string, number>()
-  for (const r of rows.rows) {
+  for (const r of rows) {
     rowCounts.set(`${r.table_schema}.${r.table_name}`, Number(r.row_estimate))
   }
 
   return {
-    columns: cols.rows,
-    fks: fks.rows,
+    columns: cols,
+    fks,
     rowCounts,
-    indexes: idxs.rows,
-    dbName: dbMeta.rows[0]?.db ?? "unknown",
-    version: dbMeta.rows[0]?.ver ?? "unknown",
+    indexes: idxs,
+    dbName: dbMetaRows[0]?.db ?? "unknown",
+    version: dbMetaRows[0]?.ver ?? "unknown",
   }
 }
 

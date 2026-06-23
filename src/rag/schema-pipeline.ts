@@ -1,8 +1,9 @@
 import type pg from "pg"
 import type { SchemaStore, TableMeta } from "../db/types.js"
 import { inspectSchema, normalizeSchema } from "../db/inspector.js"
+import { fetchSamplesBounded } from "../db/schema-samples.js"
 import { fetchSampleValues } from "../db/executor.js"
-import { detectPii, maskIfPii } from "../security/pii-detector.js"
+import { detectPii } from "../security/pii-detector.js"
 import { embedTexts } from "../rag/embedder.js"
 import { logger } from "../utils/logger.js"
 import { McpError } from "../utils/error.js"
@@ -50,30 +51,27 @@ export async function buildSchemaStore(
     const raw = await inspectSchema(pool)
     logger.info("Schema inspected", { tableCount: raw.columns.length })
 
+    if (raw.columns.length === 0) {
+      throw new McpError(
+        "SCHEMA_BUILD_FAILED",
+        "No tables found in this database. Create tables first (e.g. run seed/demo.sql in Neon SQL editor), then call connect again.",
+      )
+    }
+
     // Step 2: normalize
     const tables = normalizeSchema(raw)
     logger.info("Schema normalized", { tableCount: tables.length })
 
-    // Step 3: detect PII + fetch sample values (non-PII columns only)
-    await Promise.all(
-      tables.map(async (table) => {
-        await Promise.all(
-          table.columns.map(async (col) => {
-            col.piiRisk = detectPii(col.name)
-            if (col.piiRisk === "none") {
-              const samples = await fetchSampleValues(
-                pool,
-                table.schema,
-                table.name,
-                col.name,
-              )
-              col.sampleValues = samples
-            } else {
-              col.sampleValues = ["[masked]"]
-            }
-          }),
-        )
-      }),
+    // Step 3: detect PII + fetch sample values (bounded — safe for Neon/Vercel)
+    for (const table of tables) {
+      for (const col of table.columns) {
+        col.piiRisk = detectPii(col.name)
+      }
+    }
+    await fetchSamplesBounded(
+      pool,
+      tables,
+      (p, schema, table, column) => fetchSampleValues(p, schema, table, column),
     )
 
     // Step 4: build FK graph

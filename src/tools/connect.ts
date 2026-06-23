@@ -6,7 +6,7 @@ import { createSession, updateSessionStatus, getSession } from "../session/manag
 import { config, CONSTANTS } from "../config/index.js"
 import { runWithDatabaseUrlAsync } from "../context.js"
 import { logger } from "../utils/logger.js"
-import { toMcpError } from "../utils/error.js"
+import { toMcpError, McpError } from "../utils/error.js"
 import { defineTool } from "./core/define-tool.js"
 import { toolOk, toolError } from "./core/response.js"
 import type { McpToolResult } from "./core/types.js"
@@ -85,9 +85,15 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
           `  → Call set_alias to map friendly names to real table names`,
       )
     } catch (err) {
-      const mcpErr = toMcpError(err, "DB_CONNECT_FAILED")
+      const mcpErr = err instanceof McpError ? err : toMcpError(err, "DB_CONNECT_FAILED")
       updateSessionStatus(session.id, "error", mcpErr.message)
-      return toolError(`Connection failed: ${mcpErr.message}`)
+      const hint =
+        mcpErr.code === "SCHEMA_BUILD_FAILED"
+          ? "\n\nNeon: wake project in console, run seed/demo.sql if empty, retry connect with database_url."
+          : mcpErr.code === "DB_CONNECT_FAILED"
+            ? "\n\nUse postgres://USER:PASS@HOST/DB?sslmode=require (Neon pooled URL recommended)."
+            : ""
+      return toolError(`Connection failed: ${mcpErr.message}${hint}`)
     }
   })
 }
