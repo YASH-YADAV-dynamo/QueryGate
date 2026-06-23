@@ -3,14 +3,9 @@ import { randomUUID } from "node:crypto"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
 import { createMcpServer } from "../server.js"
-import { runWithDatabaseUrlAsync } from "../context.js"
+import { extractDatabaseUrlFromHeaders, runWithDatabaseUrlAsync } from "../context.js"
 import { applyCors, handlePreflight } from "./cors.js"
-import {
-  type HttpReq,
-  type HttpRes,
-  resolveDatabaseUrl,
-  sendMissingDatabaseUrl,
-} from "./database-url.js"
+import { type HttpReq, type HttpRes, resolveDatabaseUrl } from "./database-url.js"
 
 const transports = new Map<string, StreamableHTTPServerTransport>()
 const sessionDatabaseUrls = new Map<string, string>()
@@ -22,11 +17,100 @@ function getSessionId(req: HttpReq): string | undefined {
   return undefined
 }
 
-function resolveDatabaseUrlForSession(req: HttpReq, sessionId?: string): string | undefined {
+function rememberDatabaseUrl(req: HttpReq, sessionId?: string): string | undefined {
+  const fromHeader = extractDatabaseUrlFromHeaders(
+    req.headers as Record<string, string | string[] | undefined>,
+  )
+  if (fromHeader && sessionId) {
+    sessionDatabaseUrls.set(sessionId, fromHeader)
+  }
   return resolveDatabaseUrl(req, sessionDatabaseUrls, sessionId)
 }
 
-/** MCP Streamable HTTP — GET/POST/DELETE/OPTIONS on /mcp (Cursor, Claude remote). */
+async function dispatchMcp(req: HttpReq, res: HttpRes): Promise<void> {
+  const sessionId = getSessionId(req)
+  let transport: StreamableHTTPServerTransport | undefined
+
+  if (sessionId && transports.has(sessionId)) {
+    transport = transports.get(sessionId)
+  } else if (
+    !sessionId &&
+    req.method === "POST" &&
+    req.body !== undefined &&
+    isInitializeRequest(req.body)
+  ) {
+    const headerUrl = extractDatabaseUrlFromHeaders(
+      req.headers as Record<string, string | string[] | undefined>,
+    )
+
+    transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (sid) => {
+        transports.set(sid, transport!)
+        if (headerUrl) sessionDatabaseUrls.set(sid, headerUrl)
+      },
+    })
+
+    transport.onclose = () => {
+      const sid = transport?.sessionId
+      if (sid) {
+        transports.delete(sid)
+        sessionDatabaseUrls.delete(sid)
+      }
+    }
+
+    const server = createMcpServer()
+    await server.connect(
+      transport as unknown as import("@modelcontextprotocol/sdk/shared/transport.js").Transport,
+    )
+  } else {
+    res.statusCode = 400
+    res.setHeader("Content-Type", "application/json")
+    res.end(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Bad Request: POST initialize first, or send valid MCP-Session-Id",
+        },
+        id: null,
+      }),
+    )
+    return
+  }
+
+  if (!transport) {
+    res.statusCode = 404
+    res.setHeader("Content-Type", "application/json")
+    res.end(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        error: { code: -32001, message: "Session not found" },
+        id: null,
+      }),
+    )
+    return
+  }
+
+  try {
+    const body = req.method === "POST" && req.body !== undefined ? req.body : undefined
+    await transport.handleRequest(req, res, body)
+  } catch {
+    if (!res.headersSent) {
+      res.statusCode = 500
+      res.setHeader("Content-Type", "application/json")
+      res.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: null,
+        }),
+      )
+    }
+  }
+}
+
+/** MCP Streamable HTTP — GET/POST/DELETE/OPTIONS (ChatGPT /sse, Cursor /mcp). */
 export async function handleMcpRoute(req: HttpReq, res: HttpRes): Promise<void> {
   applyCors(req, res)
 
@@ -36,90 +120,13 @@ export async function handleMcpRoute(req: HttpReq, res: HttpRes): Promise<void> 
   }
 
   const sessionId = getSessionId(req)
-  const databaseUrl = resolveDatabaseUrlForSession(req, sessionId)
+  const databaseUrl = rememberDatabaseUrl(req, sessionId)
 
-  if (!databaseUrl) {
-    sendMissingDatabaseUrl(res)
-    return
+  if (databaseUrl) {
+    await runWithDatabaseUrlAsync(databaseUrl, () => dispatchMcp(req, res))
+  } else {
+    await dispatchMcp(req, res)
   }
-
-  await runWithDatabaseUrlAsync(databaseUrl, async () => {
-    let transport: StreamableHTTPServerTransport | undefined
-
-    if (sessionId && transports.has(sessionId)) {
-      transport = transports.get(sessionId)
-    } else if (
-      !sessionId &&
-      req.method === "POST" &&
-      req.body !== undefined &&
-      isInitializeRequest(req.body)
-    ) {
-      transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (sid) => {
-          transports.set(sid, transport!)
-          sessionDatabaseUrls.set(sid, databaseUrl)
-        },
-      })
-
-      transport.onclose = () => {
-        const sid = transport?.sessionId
-        if (sid) {
-          transports.delete(sid)
-          sessionDatabaseUrls.delete(sid)
-        }
-      }
-
-      const server = createMcpServer()
-      await server.connect(
-        transport as unknown as import("@modelcontextprotocol/sdk/shared/transport.js").Transport,
-      )
-    } else {
-      res.statusCode = 400
-      res.setHeader("Content-Type", "application/json")
-      res.end(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          error: {
-            code: -32000,
-            message: "Bad Request: POST initialize first, or send valid MCP-Session-Id",
-          },
-          id: null,
-        }),
-      )
-      return
-    }
-
-    if (!transport) {
-      res.statusCode = 404
-      res.setHeader("Content-Type", "application/json")
-      res.end(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          error: { code: -32001, message: "Session not found" },
-          id: null,
-        }),
-      )
-      return
-    }
-
-    try {
-      const body = req.method === "POST" && req.body !== undefined ? req.body : undefined
-      await transport.handleRequest(req, res, body)
-    } catch {
-      if (!res.headersSent) {
-        res.statusCode = 500
-        res.setHeader("Content-Type", "application/json")
-        res.end(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            error: { code: -32603, message: "Internal server error" },
-            id: null,
-          }),
-        )
-      }
-    }
-  })
 }
 
 export function handleHealth(_req: HttpReq, res: HttpRes): void {
@@ -129,7 +136,7 @@ export function handleHealth(_req: HttpReq, res: HttpRes): void {
     JSON.stringify({
       ok: true,
       service: "querygate",
-      endpoints: { sse: "/sse", messages: "/messages", streamableHttp: "/mcp" },
+      endpoints: { chatgpt: "/sse", streamableHttp: "/mcp" },
     }),
   )
 }
@@ -138,3 +145,6 @@ export function handleHealth(_req: HttpReq, res: HttpRes): void {
 export async function handleMcpHttpRequest(req: HttpReq, res: HttpRes): Promise<void> {
   return handleMcpRoute(req, res)
 }
+
+/** @deprecated Legacy SSE — use handleMcpRoute on /sse instead */
+export { handleSseRoute, handleMessagesRoute } from "./sse-route.js"
