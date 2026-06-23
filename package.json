@@ -10,7 +10,8 @@
   "type": "module",
   "bin": { "querygate": "./dist/cli.js" },
   "scripts": {
-    "dev": "bun --watch src/cli.ts -- --stdio",
+    "dev": "bun --watch src/cli.ts -- --http --port 3000",
+    "dev:stdio": "bun --watch src/cli.ts -- --stdio",
     "dev:http": "bun --watch src/cli.ts -- --http --port 3000",
     "start": "node dist/cli.js --stdio",
     "start:http": "node dist/cli.js --http --port 3000",

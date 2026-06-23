@@ -1,6 +1,15 @@
 export interface McpToolResult {
   content: { type: string; text: string }[]
+  structuredContent?: Record<string, unknown>
   isError?: boolean
+  _meta?: Record<string, unknown>
+}
+
+export interface McpToolMeta {
+  ui?: { resourceUri?: string; visibility?: string[] }
+  "openai/outputTemplate"?: string
+  "openai/toolInvocation/invoking"?: string
+  "openai/toolInvocation/invoked"?: string
 }
 
 export interface McpToolInputSchema {
@@ -13,5 +22,6 @@ export interface McpToolDefinition<TArgs = unknown> {
   name: string
   description: string
   inputSchema: McpToolInputSchema
+  meta?: McpToolMeta
   handler: (args: TArgs) => Promise<McpToolResult>
 }

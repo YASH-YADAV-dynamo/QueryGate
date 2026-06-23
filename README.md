@@ -138,6 +138,7 @@ Use a **read-only** Postgres user in production.
 | `execute_sql` | Run a validated SELECT |
 | `set_alias` | Map friendly names to table names |
 | `insight` | Cache stats and query history |
+| `customer_analytics` | Customer dashboard (ChatGPT UI + text fallback) |
 
 Typical flow: `connect` → `schema_reader` → `execute_sql` → AI answers.
 
@@ -150,8 +151,9 @@ Typical flow: `connect` → `schema_reader` → `execute_sql` → AI answers.
 | `npm run build` | Compile to `dist/` |
 | `npm start` | Stdio MCP (local clients) |
 | `npm run start:http` | HTTP on port 3000 (`/sse`, `/mcp`) |
-| `npm run dev` | Stdio with hot reload |
-| `npm run dev:http` | HTTP with hot reload |
+| `npm run dev` | HTTP on port **3000** (hot reload) |
+| `npm run dev:stdio` | Stdio MCP (for Cursor/Claude subprocess testing) |
+| `npm run dev:http` | Same as `npm run dev` |
 | `npm test` | Run tests |
 
 ---

@@ -4,6 +4,7 @@ import { executeSqlTool } from "./execute-sql.js"
 import { schemaReaderTool } from "./schema-reader.js"
 import { setAliasTool } from "./set-alias.js"
 import { insightTool } from "./insight.js"
+import { customerAnalyticsTool } from "./customer-analytics.js"
 
 /** All MCP tools registered with the server, in call order. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -13,6 +14,7 @@ export const ALL_TOOLS: McpToolDefinition<any>[] = [
   schemaReaderTool,
   setAliasTool,
   insightTool,
+  customerAnalyticsTool,
 ]
 
 export function getToolByName(name: string): McpToolDefinition<any> | undefined {

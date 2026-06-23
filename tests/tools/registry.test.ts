@@ -2,13 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { ALL_TOOLS, getToolByName } from "../../src/tools/index.js"
 
 describe("tools registry", () => {
-  test("exports five tools in stable order", () => {
+  test("exports six tools in stable order", () => {
     expect(ALL_TOOLS.map((t) => t.name)).toEqual([
       "connect",
       "execute_sql",
       "schema_reader",
       "set_alias",
       "insight",
+      "customer_analytics",
     ])
   })
 

@@ -5,15 +5,18 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createMcpServer } from "./server.js"
-import { logger } from "./utils/logger.js"
+import { printStartup } from "./utils/startup.js"
 
 const server = createMcpServer()
 const transport = new StdioServerTransport()
 await server.connect(transport)
 
-logger.info("querygate started (stdio)", {
-  pid: process.pid,
-  hint: process.env.DATABASE_URL
-    ? "DATABASE_URL loaded from env"
-    : "No DATABASE_URL in env — user can provide Postgres URL in chat, then call connect with database_url",
-})
+const dbHint = process.env.DATABASE_URL
+  ? "DATABASE_URL loaded from mcp.json env"
+  : "DATABASE_URL not set — paste Postgres URL in chat, then call connect"
+
+printStartup([
+  `stdio MCP ready (pid ${process.pid})`,
+  "transport: stdin/stdout — no port (your MCP client spawns this process)",
+  dbHint,
+])
