@@ -75,12 +75,11 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
     const structured = {
       access_token: stored?.accessToken ?? null,
       connection_id: stored?.connectionId ?? null,
-      session_id: getReadySessionId(session),
       database: schema.dbName,
       tables: tableList,
       store_enabled: isConnectionStoreEnabled(),
       hosted_note: stored
-        ? "REQUIRED: pass access_token on ALL later tools (schema_reader, execute_sql, customer_analytics). session_id does NOT work across Vercel requests."
+        ? "REQUIRED: pass access_token on ALL later calls — query, analytics. Works across all Vercel requests."
         : "Set QUERYGATE_STORE_URL on server for JWT tokens. Until then pass database_url on every tool call.",
     }
 
@@ -94,19 +93,16 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
 
     if (stored) {
       lines.push(
-        "=== ACCESS TOKEN (use on every later tool call) ===",
+        "=== ACCESS TOKEN (pass on every tool call) ===",
         stored.accessToken,
         "",
         `Connection ID: ${stored.connectionId}`,
-        "⚠ session_id below is NOT reliable on hosted Vercel — always pass access_token",
         "",
       )
     }
 
     lines.push(
       `Connected to: ${schema.dbName} (PostgreSQL ${schema.version.split(" ")[0]})`,
-      `Session ID (ephemeral): ${getReadySessionId(session)}`,
-      "",
       `Tables (${schema.tables.size}): ${preview}${overflow}`,
       `PII-flagged tables: ${schema.piiTables.size}`,
       `Auto-inferred aliases: ${autoApplied}`,
@@ -115,7 +111,7 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
     if (stored) {
       lines.push(
         "",
-        "Next: schema_reader({ access_token: \"<token above>\" }) then execute_sql({ access_token, sql }).",
+        'Next: query({ access_token, action: "schema" }) or query({ access_token, action: "sql", sql: "..." })',
       )
     } else {
       lines.push(
@@ -138,11 +134,10 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
 
 export const connectTool = defineTool({
   name: "connect",
-  description: `Connect QueryGate to the user's PostgreSQL database (server-side).
+  description: `Connect to the user's PostgreSQL database. Call once — returns access_token (JWT).
 
-Pass database_url ONCE. Server encrypts it in Postgres and returns access_token (JWT).
-Use access_token on ALL subsequent calls — execute_sql, schema_reader, customer_analytics.
-Do NOT pass database_url again after getting access_token.`,
+Pass access_token on ALL subsequent tool calls: query, analytics.
+Do NOT pass database_url again after receiving access_token.`,
   inputSchema: {
     type: "object",
     properties: {

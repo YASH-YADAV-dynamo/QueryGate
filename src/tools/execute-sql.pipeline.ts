@@ -66,7 +66,8 @@ export async function executeSqlPipeline(
   }
   tickRateLimit(rateLimit)
 
-  const pool = await getOrCreatePool(config.DATABASE_URL)
+  // session.databaseUrl is set by ensureConnected — always available, no async context needed.
+  const pool = await getOrCreatePool(session.databaseUrl)
   const execResult = await executeQuery(
     pool,
     sql,

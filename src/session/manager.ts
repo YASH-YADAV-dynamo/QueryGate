@@ -61,6 +61,7 @@ export function createSession(databaseUrl: string): SessionState {
   const session: SessionState = {
     id,
     connId,
+    databaseUrl,
     status: "pending",
     createdAt: now,
     lastUsedAt: now,

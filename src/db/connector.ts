@@ -35,6 +35,14 @@ function buildPoolConfig(databaseUrl: string): pg.PoolConfig {
   }
 }
 
+/**
+ * Look up an already-created pool by the session connId (hash of URL).
+ * Avoids needing the raw URL again after ensureConnected.
+ */
+export function getPoolByConnId(id: string): pg.Pool | undefined {
+  return pools.get(id)
+}
+
 export async function getOrCreatePool(databaseUrl: string): Promise<pg.Pool> {
   const id = connId(databaseUrl)
   const existing = pools.get(id)

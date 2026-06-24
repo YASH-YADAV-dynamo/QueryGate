@@ -102,6 +102,7 @@ export interface SessionStats {
 export interface SessionState {
   id: string
   connId: string // SHA256 of DATABASE_URL — never store raw URL
+  databaseUrl: string // raw URL — in-memory only, never persisted
   status: SessionStatus
   createdAt: number
   lastUsedAt: number

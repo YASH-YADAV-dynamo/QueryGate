@@ -1,21 +1,23 @@
 import { describe, expect, test } from "bun:test"
-import { handleSetAlias } from "../../src/tools/set-alias.js"
+import { handleAnalytics } from "../../src/tools/analytics.js"
 import { getToolText, isToolError } from "../../src/tools/core/response.js"
 import { createReadySession } from "../helpers/session.js"
 
-describe("set-alias handler", () => {
-  test("returns error when session is missing", async () => {
-    const result = await handleSetAlias({ session_id: "bad", action: "list" })
+describe("analytics handler (alias actions)", () => {
+  test("returns error when no session or credentials", async () => {
+    const result = await handleAnalytics({ action: "alias_list" })
     expect(isToolError(result)).toBe(true)
   })
 
-  test("list reports empty store", async () => {
+  test("alias_list reports empty store", async () => {
     const session = createReadySession()
-    const text = getToolText(await handleSetAlias({ session_id: session.id, action: "list" }))
+    const text = getToolText(
+      await handleAnalytics({ database_url: session.databaseUrl, action: "alias_list" }),
+    )
     expect(text).toBe("No aliases set.")
   })
 
-  test("add creates alias and reports cache invalidation", async () => {
+  test("alias_add creates alias and reports cache invalidation", async () => {
     const session = createReadySession()
     session.cache.query.set("key", {
       question: "q",
@@ -28,9 +30,9 @@ describe("set-alias handler", () => {
     })
 
     const text = getToolText(
-      await handleSetAlias({
-        session_id: session.id,
-        action: "add",
+      await handleAnalytics({
+        database_url: session.databaseUrl,
+        action: "alias_add",
         from: "customers",
         to: "public.users",
         kind: "table",
@@ -42,50 +44,58 @@ describe("set-alias handler", () => {
     expect(session.aliases.byFrom.has("customers")).toBe(true)
   })
 
-  test("add requires from and to", async () => {
+  test("alias_add requires from and to", async () => {
     const session = createReadySession()
-    const result = await handleSetAlias({ session_id: session.id, action: "add", from: "x" })
+    const result = await handleAnalytics({
+      database_url: session.databaseUrl,
+      action: "alias_add",
+      from: "x",
+    })
     expect(getToolText(result)).toContain("ERROR:")
     expect(getToolText(result)).toContain("'from' and 'to'")
   })
 
-  test("remove deletes alias", async () => {
+  test("alias_remove deletes alias", async () => {
     const session = createReadySession()
-    await handleSetAlias({
-      session_id: session.id,
-      action: "add",
+    await handleAnalytics({
+      database_url: session.databaseUrl,
+      action: "alias_add",
       from: "foo",
       to: "public.users",
     })
 
     const text = getToolText(
-      await handleSetAlias({ session_id: session.id, action: "remove", from: "foo" }),
+      await handleAnalytics({ database_url: session.databaseUrl, action: "alias_remove", from: "foo" }),
     )
     expect(text).toContain('Removed alias "foo"')
     expect(session.aliases.byFrom.has("foo")).toBe(false)
   })
 
-  test("remove reports when alias not found", async () => {
+  test("alias_remove reports when alias not found", async () => {
     const session = createReadySession()
     const text = getToolText(
-      await handleSetAlias({ session_id: session.id, action: "remove", from: "missing" }),
+      await handleAnalytics({
+        database_url: session.databaseUrl,
+        action: "alias_remove",
+        from: "missing",
+      }),
     )
     expect(text).toBe('Alias "missing" not found.')
   })
 
-  test("user alias overrides previous user mapping", async () => {
+  test("alias_add overwrites previous user mapping", async () => {
     const session = createReadySession()
-    await handleSetAlias({
-      session_id: session.id,
-      action: "add",
+    await handleAnalytics({
+      database_url: session.databaseUrl,
+      action: "alias_add",
       from: "orders",
       to: "public.orders",
     })
 
     const text = getToolText(
-      await handleSetAlias({
-        session_id: session.id,
-        action: "add",
+      await handleAnalytics({
+        database_url: session.databaseUrl,
+        action: "alias_add",
         from: "orders",
         to: "public.other",
       }),

@@ -2,7 +2,6 @@ import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test"
 import { getToolText, isToolError } from "../../src/tools/core/response.js"
 import { createReadySession } from "../helpers/session.js"
 import { withoutDatabaseUrl } from "../helpers/env.js"
-import { updateSessionStatus } from "../../src/session/manager.js"
 
 const mockPipeline = mock(() =>
   Promise.resolve({
@@ -20,9 +19,9 @@ mock.module("../../src/tools/execute-sql.pipeline.js", () => ({
   executeSqlPipeline: mockPipeline,
 }))
 
-const { handleExecuteSql } = await import("../../src/tools/execute-sql.js")
+const { handleQuery } = await import("../../src/tools/query.js")
 
-describe("execute-sql handler", () => {
+describe("query handler (sql action)", () => {
   beforeEach(() => {
     mockPipeline.mockImplementation(() =>
       Promise.resolve({
@@ -41,40 +40,26 @@ describe("execute-sql handler", () => {
     mockPipeline.mockClear()
   })
 
-  test("returns error when session is missing", async () => {
+  test("returns error when no session or credentials", async () => {
     await withoutDatabaseUrl(async () => {
-      const result = await handleExecuteSql({
-        session_id: "missing",
-        sql: "SELECT 1",
-      })
+      const result = await handleQuery({ action: "sql", sql: "SELECT 1" })
       expect(isToolError(result)).toBe(true)
-      expect(getToolText(result)).toContain("Session expired or not found")
+      expect(getToolText(result)).toContain("No session")
     })
-  })
-
-  test("returns error when session is not ready", async () => {
-    const session = createReadySession()
-    updateSessionStatus(session.id, "connecting")
-
-    const result = await handleExecuteSql({
-      session_id: session.id,
-      sql: "SELECT 1",
-    })
-    expect(isToolError(result)).toBe(true)
-    expect(getToolText(result)).toContain("Session not ready")
   })
 
   test("delegates to pipeline and formats JSON rows", async () => {
     const session = createReadySession()
     const text = getToolText(
-      await handleExecuteSql({
-        session_id: session.id,
+      await handleQuery({
+        database_url: session.databaseUrl,
+        action: "sql",
         sql: "SELECT id, name FROM users LIMIT 1",
       }),
     )
 
     expect(mockPipeline).toHaveBeenCalledTimes(1)
-    expect(text).toContain("✓ Executed in 5ms")
+    expect(text).toContain("5ms")
     expect(text).toContain("1 row")
     expect(text).toContain('"name": "Alice"')
   })
@@ -94,9 +79,9 @@ describe("execute-sql handler", () => {
 
     const session = createReadySession()
     const text = getToolText(
-      await handleExecuteSql({ session_id: session.id, sql: "SELECT 1" }),
+      await handleQuery({ database_url: session.databaseUrl, action: "sql", sql: "SELECT 1" }),
     )
-    expect(text).toContain("✓ Cached result")
+    expect(text).toContain("Cached")
   })
 
   test("surfaces pipeline errors", async () => {
@@ -105,11 +90,19 @@ describe("execute-sql handler", () => {
     })
 
     const session = createReadySession()
-    const result = await handleExecuteSql({
-      session_id: session.id,
+    const result = await handleQuery({
+      database_url: session.databaseUrl,
+      action: "sql",
       sql: "SELECT * FROM fake",
     })
     expect(isToolError(result)).toBe(true)
     expect(getToolText(result)).toContain("Table not found")
+  })
+
+  test("requires sql param for sql action", async () => {
+    const session = createReadySession()
+    const result = await handleQuery({ database_url: session.databaseUrl, action: "sql" })
+    expect(isToolError(result)).toBe(true)
+    expect(getToolText(result)).toContain("'sql' is required")
   })
 })

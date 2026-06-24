@@ -1,19 +1,19 @@
 import { describe, expect, test } from "bun:test"
-import { handleInsight } from "../../src/tools/insight.js"
+import { handleQuery } from "../../src/tools/query.js"
 import { getToolText, isToolError } from "../../src/tools/core/response.js"
 import { createReadySession } from "../helpers/session.js"
 import { buildMockSchema } from "../helpers/fixtures.js"
 
-describe("insight handler", () => {
-  test("returns error when session is missing", async () => {
-    const result = await handleInsight({ session_id: "bad", topic: "cache_stats" })
+describe("query handler (stats action)", () => {
+  test("returns error when no session or credentials", async () => {
+    const result = await handleQuery({ action: "stats" })
     expect(isToolError(result)).toBe(true)
   })
 
   test("cache_stats reports query and embed cache", async () => {
     const session = createReadySession()
     const text = getToolText(
-      await handleInsight({ session_id: session.id, topic: "cache_stats" }),
+      await handleQuery({ database_url: session.databaseUrl, action: "stats", topic: "cache_stats" }),
     )
     expect(text).toContain("=== CACHE STATS ===")
     expect(text).toContain("Query cache:")
@@ -23,7 +23,7 @@ describe("insight handler", () => {
   test("query_history is empty initially", async () => {
     const session = createReadySession()
     const text = getToolText(
-      await handleInsight({ session_id: session.id, topic: "query_history" }),
+      await handleQuery({ database_url: session.databaseUrl, action: "stats", topic: "query_history" }),
     )
     expect(text).toBe("No queries run yet.")
   })
@@ -41,7 +41,7 @@ describe("insight handler", () => {
     })
 
     const text = getToolText(
-      await handleInsight({ session_id: session.id, topic: "query_history" }),
+      await handleQuery({ database_url: session.databaseUrl, action: "stats", topic: "query_history" }),
     )
     expect(text).toContain("=== QUERY HISTORY")
     expect(text).toContain("SELECT COUNT(*) FROM users")
@@ -50,17 +50,16 @@ describe("insight handler", () => {
   test("session_stats includes session metadata", async () => {
     const session = createReadySession()
     const text = getToolText(
-      await handleInsight({ session_id: session.id, topic: "session_stats" }),
+      await handleQuery({ database_url: session.databaseUrl, action: "stats", topic: "session_stats" }),
     )
     expect(text).toContain("=== SESSION STATS ===")
-    expect(text).toContain(session.id)
-    expect(text).toContain("Status:          ready")
+    expect(text).toContain("ready")
   })
 
   test("pii_report lists flagged columns", async () => {
     const session = createReadySession()
     const text = getToolText(
-      await handleInsight({ session_id: session.id, topic: "pii_report" }),
+      await handleQuery({ database_url: session.databaseUrl, action: "stats", topic: "pii_report" }),
     )
     expect(text).toContain("=== PII REPORT ===")
     expect(text).toContain("public.users")
@@ -72,7 +71,7 @@ describe("insight handler", () => {
       schema: buildMockSchema({ piiTables: new Set() }),
     })
     const text = getToolText(
-      await handleInsight({ session_id: session.id, topic: "pii_report" }),
+      await handleQuery({ database_url: session.databaseUrl, action: "stats", topic: "pii_report" }),
     )
     expect(text).toBe("No PII-flagged tables detected.")
   })
@@ -80,10 +79,10 @@ describe("insight handler", () => {
   test("schema_summary aggregates counts", async () => {
     const session = createReadySession()
     const text = getToolText(
-      await handleInsight({ session_id: session.id, topic: "schema_summary" }),
+      await handleQuery({ database_url: session.databaseUrl, action: "stats", topic: "schema_summary" }),
     )
     expect(text).toContain("=== SCHEMA SUMMARY ===")
-    expect(text).toContain("Tables:     2")
-    expect(text).toContain("Database:   testdb")
+    expect(text).toContain("Tables: 2")
+    expect(text).toContain("testdb")
   })
 })

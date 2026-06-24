@@ -1,35 +1,37 @@
 import { describe, expect, test } from "bun:test"
-import { handleSchemaReader } from "../../src/tools/schema-reader.js"
+import { handleQuery } from "../../src/tools/query.js"
 import { getToolText, isToolError } from "../../src/tools/core/response.js"
 import { createReadySession } from "../helpers/session.js"
 import { withoutDatabaseUrl } from "../helpers/env.js"
 import { buildMockSchema } from "../helpers/fixtures.js"
 
-describe("schema-reader handler", () => {
-  test("returns error when session is missing", async () => {
+describe("query handler (schema action)", () => {
+  test("returns error when no session or credentials", async () => {
     await withoutDatabaseUrl(async () => {
-      const result = await handleSchemaReader({ session_id: "nonexistent" })
+      const result = await handleQuery({ action: "schema" })
       expect(isToolError(result)).toBe(true)
-      expect(getToolText(result)).toContain("Session expired or not found")
+      expect(getToolText(result)).toContain("No session")
     })
   })
 
   test("lists all tables with columns and metadata", async () => {
     const session = createReadySession()
-    const text = getToolText(await handleSchemaReader({ session_id: session.id }))
+    const text = getToolText(
+      await handleQuery({ database_url: session.databaseUrl, action: "schema" }),
+    )
 
     expect(text).toContain("Database: testdb")
     expect(text).toContain("TABLE: public.users")
     expect(text).toContain("TABLE: public.orders")
     expect(text).toContain("email: varchar")
     expect(text).toContain("⚠️ PII")
-    expect(text).toContain("Related tables:")
+    expect(text).toContain("Related:")
   })
 
   test("filters tables by substring", async () => {
     const session = createReadySession()
     const text = getToolText(
-      await handleSchemaReader({ session_id: session.id, filter: "orders" }),
+      await handleQuery({ database_url: session.databaseUrl, action: "schema", filter: "orders" }),
     )
 
     expect(text).toContain("TABLE: public.orders")
@@ -40,7 +42,7 @@ describe("schema-reader handler", () => {
   test("reports no tables when filter matches nothing", async () => {
     const session = createReadySession()
     const text = getToolText(
-      await handleSchemaReader({ session_id: session.id, filter: "nope" }),
+      await handleQuery({ database_url: session.databaseUrl, action: "schema", filter: "nope" }),
     )
     expect(text).toBe('No tables found matching "nope".')
   })
@@ -57,8 +59,10 @@ describe("schema-reader handler", () => {
       createdAt: Date.now(),
     })
 
-    const text = getToolText(await handleSchemaReader({ session_id: session.id }))
-    expect(text).toContain('Active aliases: 1')
+    const text = getToolText(
+      await handleQuery({ database_url: session.databaseUrl, action: "schema" }),
+    )
+    expect(text).toContain("Aliases: 1")
     expect(text).toContain('"customers" → "public.users"')
   })
 
@@ -66,7 +70,9 @@ describe("schema-reader handler", () => {
     const session = createReadySession({
       schema: buildMockSchema({ tables: new Map(), piiTables: new Set(), fkGraph: new Map() }),
     })
-    const text = getToolText(await handleSchemaReader({ session_id: session.id }))
+    const text = getToolText(
+      await handleQuery({ database_url: session.databaseUrl, action: "schema" }),
+    )
     expect(text).toBe("No tables found.")
   })
 })
