@@ -44,12 +44,22 @@ const INSPECT_FK_SQL = `
     AND tc.table_schema NOT IN ('pg_catalog','information_schema')
 `
 
+/**
+ * Use GREATEST(n_live_tup, reltuples) so we get a non-zero estimate even if ANALYZE
+ * has never run (n_live_tup=0) but the table was created with rows (reltuples > 0).
+ */
 const INSPECT_ROWCOUNTS_SQL = `
   SELECT
-    schemaname AS table_schema,
-    tablename  AS table_name,
-    n_live_tup AS row_estimate
-  FROM pg_stat_user_tables
+    n.nspname  AS table_schema,
+    c.relname  AS table_name,
+    GREATEST(COALESCE(s.n_live_tup, 0), c.reltuples::bigint, 0) AS row_estimate
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  LEFT JOIN pg_stat_user_tables s
+    ON s.schemaname = n.nspname AND s.relname = c.relname
+  WHERE c.relkind = 'r'
+    AND n.nspname NOT IN ('pg_catalog','information_schema','pg_toast')
+    AND n.nspname NOT LIKE 'pg_temp%'
 `
 
 const INSPECT_INDEXES_SQL = `
@@ -95,6 +105,42 @@ interface RawIndex {
   indexdef: string
 }
 
+/** Real COUNT(*) for tables whose pg_stat estimate is 0 — bounded to avoid slow scans. */
+const MAX_REAL_COUNTS = 50
+const COUNT_TIMEOUT_MS = 3000
+
+async function fillMissingCounts(
+  pool: pg.Pool,
+  rowCounts: Map<string, number>,
+  knownTables: Set<string>,
+): Promise<void> {
+  const zeroTables = Array.from(knownTables).filter((fqn) => (rowCounts.get(fqn) ?? 0) === 0)
+  if (zeroTables.length === 0) return
+
+  const targets = zeroTables.slice(0, MAX_REAL_COUNTS)
+  await Promise.all(
+    targets.map(async (fqn) => {
+      try {
+        const [schema, table] = fqn.split(".")
+        if (!schema || !table) return
+        const client = await pool.connect()
+        try {
+          await client.query(`SET LOCAL statement_timeout = ${COUNT_TIMEOUT_MS}`)
+          const result = await client.query<{ c: string }>(
+            `SELECT COUNT(*)::text AS c FROM "${schema.replace(/"/g, '""')}"."${table.replace(/"/g, '""')}"`,
+          )
+          const count = Number(result.rows[0]?.c ?? 0)
+          if (count > 0) rowCounts.set(fqn, count)
+        } finally {
+          client.release()
+        }
+      } catch {
+        // ignore — keep the 0 estimate; user can still query the table
+      }
+    }),
+  )
+}
+
 export async function inspectSchema(pool: pg.Pool): Promise<RawSchema> {
   const [cols, fks, rows, idxs, dbMetaRows] = await Promise.all([
     safeInspectQuery<RawColumn>(pool, "columns", INSPECT_COLUMNS_SQL, []),
@@ -118,6 +164,10 @@ export async function inspectSchema(pool: pg.Pool): Promise<RawSchema> {
   for (const r of rows) {
     rowCounts.set(`${r.table_schema}.${r.table_name}`, Number(r.row_estimate))
   }
+
+  // Real COUNT(*) for any table still showing 0 — fixes "ANALYZE never ran" empty estimates.
+  const knownTables = new Set(cols.map((c) => `${c.table_schema}.${c.table_name}`))
+  await fillMissingCounts(pool, rowCounts, knownTables)
 
   return {
     columns: cols,
