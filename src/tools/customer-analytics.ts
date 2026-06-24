@@ -52,6 +52,7 @@ REQUIRED on hosted Vercel: pass access_token from connect (NOT session_id).
 Scans customer/subscription tables and returns KPI cards, segments, trends, recent customers.`,
   inputSchema,
   meta: {
+    "x-openai-isConsequential": false,
     ui: { resourceUri: CUSTOMER_ANALYTICS_WIDGET_URI },
     "openai/outputTemplate": CUSTOMER_ANALYTICS_WIDGET_URI,
     "openai/toolInvocation/invoking": "Building customer dashboard…",

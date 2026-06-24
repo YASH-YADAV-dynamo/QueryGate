@@ -10,6 +10,8 @@ export interface McpToolMeta {
   "openai/outputTemplate"?: string
   "openai/toolInvocation/invoking"?: string
   "openai/toolInvocation/invoked"?: string
+  /** Tell ChatGPT this is a read-only tool — no confirmation prompt per call. */
+  "x-openai-isConsequential"?: boolean
 }
 
 export interface McpToolInputSchema {

@@ -64,20 +64,10 @@ async function handleExecuteSql(args: ExecuteSqlInput): Promise<McpToolResult> {
 
 export const executeSqlTool = defineTool({
   name: "execute_sql",
-  description: `Execute a SQL SELECT query against the connected database.
-
-The AI client (you) should:
-1. First call schema_reader to understand the table structure
-2. Generate the appropriate SELECT query based on the user's question
-3. Call this tool with that SQL
-
-The server will:
-- Validate the SQL (block writes, DDL, injection attempts)
-- Check the LRU cache (identical queries return instantly)
-- Execute in a READ ONLY transaction with timeout + row limit
-- Strip PII columns from results
-- Return rows as JSON`,
+  description: `Run a validated SELECT query on the user's database. Pass access_token from connect.
+Server validates SQL (blocks writes/DDL), executes read-only, returns JSON rows.`,
   inputSchema,
+  meta: { "x-openai-isConsequential": false },
   handler: handleExecuteSql,
 })
 

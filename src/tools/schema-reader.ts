@@ -100,7 +100,8 @@ export async function handleSchemaReader(args: SchemaReaderInput): Promise<McpTo
 export const schemaReaderTool = defineTool({
   name: "schema_reader",
   description:
-    "Read the database schema from RAM — no DB call. Returns table names, columns, types, PK/FK relationships, PII flags, and row estimates.",
+    "Get full database schema (tables, columns, types, FK relationships). Pass access_token from connect. No DB call — reads from cache.",
   inputSchema,
+  meta: { "x-openai-isConsequential": false },
   handler: handleSchemaReader,
 })

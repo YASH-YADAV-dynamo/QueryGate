@@ -57,6 +57,14 @@ async function dispatchMcp(req: HttpReq, res: HttpRes): Promise<void> {
   const sessionId = getSessionId(req)
   let transport: StreamableHTTPServerTransport | undefined
 
+  // ChatGPT connector-creation probe: GET with no session ID → return 200 so validation passes.
+  if (req.method === "GET" && !sessionId) {
+    res.statusCode = 200
+    res.setHeader("Content-Type", "application/json")
+    res.end(JSON.stringify({ service: "querygate-mcp", protocol: "streamable-http", version: "2.0.0" }))
+    return
+  }
+
   if (sessionId && transports.has(sessionId)) {
     transport = transports.get(sessionId)
   } else if (

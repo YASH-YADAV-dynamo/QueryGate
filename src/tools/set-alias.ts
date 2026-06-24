@@ -92,7 +92,8 @@ export async function handleSetAlias(args: SetAliasInput): Promise<McpToolResult
 export const setAliasTool = defineTool({
   name: "set_alias",
   description:
-    "Add, remove, or list aliases that map user-friendly terms to real DB names. Adding an alias invalidates the query cache to prevent stale SQL.",
+    "Map friendly names to real DB table/column names. Pass access_token from connect.",
   inputSchema,
+  meta: { "x-openai-isConsequential": false },
   handler: handleSetAlias,
 })

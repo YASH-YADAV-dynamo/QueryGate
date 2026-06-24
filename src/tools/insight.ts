@@ -144,7 +144,8 @@ export async function handleInsight(args: InsightInput): Promise<McpToolResult> 
 export const insightTool = defineTool({
   name: "insight",
   description:
-    "Get insights from the current session — cache performance, query history, PII report, session stats. Reads from RAM only.",
+    "Session stats, query history, PII report, cache performance. Pass access_token from connect.",
   inputSchema,
+  meta: { "x-openai-isConsequential": false },
   handler: handleInsight,
 })

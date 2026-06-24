@@ -14,6 +14,8 @@
     "dev:quick": "bun --watch src/cli.ts -- --http --port 3000",
     "dev:stdio": "bun --watch src/cli.ts -- --stdio",
     "dev:http": "npm run dev",
+    "tunnel": "npx --yes localtunnel --port 3000 --subdomain querygate",
+    "tunnel:ngrok": "ngrok http 3000",
     "start": "node dist/cli.js --stdio",
     "start:http": "node dist/cli.js --http --port 3000",
     "test": "bun test --preload ./tests/setup.ts",

@@ -140,22 +140,21 @@ export const connectTool = defineTool({
   name: "connect",
   description: `Connect QueryGate to the user's PostgreSQL database (server-side).
 
-Pass database_url ONCE with the user's full connection string.
-The server encrypts the URL in Postgres and returns an access_token (JWT with connection id only).
-
-After connect, ALWAYS pass access_token (not session_id) on schema_reader, execute_sql, customer_analytics.
-The access_token is a JWT — your DB URL is encrypted in Postgres. session_id is RAM-only and breaks on Vercel.`,
+Pass database_url ONCE. Server encrypts it in Postgres and returns access_token (JWT).
+Use access_token on ALL subsequent calls — execute_sql, schema_reader, customer_analytics.
+Do NOT pass database_url again after getting access_token.`,
   inputSchema: {
     type: "object",
     properties: {
       database_url: {
         type: "string",
         description:
-          "Full Postgres URL (first connect only): postgres://user:password@host.neon.tech/dbname?sslmode=require",
+          "Full Postgres URL (first time only): postgres://user:password@host/dbname?sslmode=require",
       },
     },
     required: [],
   },
+  meta: { "x-openai-isConsequential": false },
   handler: handleConnect,
 })
 
