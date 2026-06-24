@@ -1,36 +1,38 @@
-import { getOrCreatePool } from "../db/connector.js"
+import { getOrCreatePool, normalizeDatabaseUrl } from "../db/connector.js"
 import { buildSchemaStore } from "../rag/schema-pipeline.js"
 import { inferAliases, addAlias } from "./alias-store.js"
 import { createSession, getSession, getSessionForDatabaseUrl, updateSessionStatus } from "./manager.js"
 import { CONSTANTS } from "../config/index.js"
 import { getRequestAccessToken, getRequestDatabaseUrl } from "../context.js"
-import { isConnectionStoreEnabled, resolveDatabaseUrlFromToken } from "../store/connection-store.js"
+import { resolveDatabaseUrlFromToken } from "../store/connection-store.js"
 import { logger } from "../utils/logger.js"
 import { McpError, toMcpError } from "../utils/error.js"
 import type { SessionState } from "../db/types.js"
 import type { McpToolResult } from "../tools/core/types.js"
 import { toolError } from "../tools/core/response.js"
 
-/** Connect to a database and load its schema into a session. Idempotent — reuses ready sessions. */
+/** Connect to a database, load schema, and cache the session. Idempotent. */
 export async function ensureConnected(databaseUrl: string): Promise<SessionState> {
-  const existing = getSessionForDatabaseUrl(databaseUrl)
+  const normalized = normalizeDatabaseUrl(databaseUrl)
+
+  const existing = getSessionForDatabaseUrl(normalized)
   if (existing?.status === "ready") {
     existing.lastUsedAt = Date.now()
-    existing.databaseUrl = databaseUrl
+    existing.databaseUrl = normalized
     return existing
   }
 
-  const session = existing ?? createSession(databaseUrl)
+  const session = existing ?? createSession(normalized)
 
   try {
     updateSessionStatus(session.id, "connecting")
-    const pool = await getOrCreatePool(databaseUrl)
+    const pool = await getOrCreatePool(normalized)
     updateSessionStatus(session.id, "schema_load")
     const schema = await buildSchemaStore(pool)
 
     const live = getSession(session.id)!
     live.schema = schema
-    live.databaseUrl = databaseUrl
+    live.databaseUrl = normalized
 
     const inferred = inferAliases(schema)
     for (const alias of inferred) {
@@ -49,40 +51,46 @@ export async function ensureConnected(databaseUrl: string): Promise<SessionState
   }
 }
 
-/** Resolve the database URL from all possible sources, in priority order. */
-async function resolveUrl(token?: string, url?: string): Promise<string | undefined> {
-  if (url) return url
+/**
+ * Resolve the DB URL from all possible sources, in priority order.
+ * Returns [url, errorMessage] — url is set on success, errorMessage on token error.
+ */
+async function resolveUrl(
+  token?: string,
+  explicitUrl?: string,
+): Promise<{ url?: string; tokenError?: string }> {
+  if (explicitUrl) return { url: normalizeDatabaseUrl(explicitUrl) }
 
   const t = token ?? getRequestAccessToken()
-  if (t && isConnectionStoreEnabled()) {
+  if (t && process.env.JWT_SECRET) {
     try {
-      return await resolveDatabaseUrlFromToken(t)
+      const url = await resolveDatabaseUrlFromToken(t)
+      return { url }
     } catch (err) {
-      logger.warn("Access token resolution failed", {
-        error: err instanceof Error ? err.message : String(err),
-      })
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.warn("Token resolution failed", { error: msg })
+      return { tokenError: msg }
     }
   }
 
   const fromRequest = getRequestDatabaseUrl()
-  if (fromRequest) return fromRequest
+  if (fromRequest) return { url: normalizeDatabaseUrl(fromRequest) }
 
-  if (!isConnectionStoreEnabled()) {
-    return process.env.DATABASE_URL
-  }
+  // Fallback for local/stdio mode without JWT
+  if (process.env.DATABASE_URL) return { url: normalizeDatabaseUrl(process.env.DATABASE_URL) }
 
-  return undefined
+  return {}
 }
 
 /**
  * Resolve a ready session for any tool call.
- * Single auth param: either access_token (Vercel/hosted) or database_url (local/direct).
+ * Surfaces real error messages — no silent failures.
  */
 export async function resolveSessionForTool(
   accessToken?: string,
   databaseUrl?: string,
 ): Promise<SessionState | McpToolResult> {
-  const url = await resolveUrl(accessToken, databaseUrl)
+  const { url, tokenError } = await resolveUrl(accessToken, databaseUrl)
 
   if (url) {
     try {
@@ -93,14 +101,24 @@ export async function resolveSessionForTool(
     }
   }
 
-  if (isConnectionStoreEnabled()) {
+  if (tokenError) {
     return toolError(
-      "No session. Call connect with database_url first — it returns access_token. Pass access_token on every subsequent tool call.",
+      `Access token error: ${tokenError}\n\nCall connect again with database_url to get a fresh token.`,
+    )
+  }
+
+  if (accessToken) {
+    return toolError(
+      "Could not resolve database URL from access_token. " +
+        "The token may be from an older format. Call connect again with database_url.",
     )
   }
 
   return toolError(
-    "No session. Call connect with database_url, or pass DATABASE_URL on every request header.",
+    process.env.JWT_SECRET
+      ? "No database session. Call connect with database_url — it returns access_token. " +
+          "Pass access_token on every tool call (query, analytics)."
+      : "No database session. Call connect with database_url.",
   )
 }
 

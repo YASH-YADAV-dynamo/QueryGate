@@ -10,7 +10,7 @@ describe("query handler (schema action)", () => {
     await withoutDatabaseUrl(async () => {
       const result = await handleQuery({ action: "schema" })
       expect(isToolError(result)).toBe(true)
-      expect(getToolText(result)).toContain("No session")
+      expect(getToolText(result)).toContain("No database session")
     })
   })
 

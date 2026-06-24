@@ -44,7 +44,7 @@ describe("query handler (sql action)", () => {
     await withoutDatabaseUrl(async () => {
       const result = await handleQuery({ action: "sql", sql: "SELECT 1" })
       expect(isToolError(result)).toBe(true)
-      expect(getToolText(result)).toContain("No session")
+      expect(getToolText(result)).toContain("No database session")
     })
   })
 
