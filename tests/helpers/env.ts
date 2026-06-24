@@ -1,19 +1,29 @@
 const STORE_ENV_KEYS = [
   "QUERYGATE_STORE_URL",
+  "DATABASE_URL",
+  "POSTGRES_URL",
+  "POSTGRES_PRISMA_URL",
+  "NEON_DATABASE_URL",
   "JWT_SECRET",
   "ENCRYPTION_KEY",
+  "DATABASE",
+  "PGHOST",
+  "PGUSER",
+  "PGPASSWORD",
+  "PGDATABASE",
+  "POSTGRES_HOST",
+  "POSTGRES_USER",
+  "POSTGRES_PASSWORD",
+  "POSTGRES_DATABASE",
 ] as const
 
-/** Run a test without DATABASE_URL or connection store env (simulates legacy local mode). */
+/** Run a test with no Postgres env (simulates missing credentials). */
 export async function withoutDatabaseUrl<T>(fn: () => Promise<T>): Promise<T> {
-  const saved: Record<string, string | undefined> = {
-    DATABASE_URL: process.env.DATABASE_URL,
-  }
+  const saved: Record<string, string | undefined> = {}
   for (const key of STORE_ENV_KEYS) {
     saved[key] = process.env[key]
     delete process.env[key]
   }
-  delete process.env.DATABASE_URL
 
   try {
     return await fn()

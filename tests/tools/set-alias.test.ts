@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { handleAnalytics } from "../../src/tools/analytics.js"
 import { getToolText, isToolError } from "../../src/tools/core/response.js"
 import { createReadySession } from "../helpers/session.js"
+import { withoutDatabaseUrl } from "../helpers/env.js"
 
 describe("analytics handler (alias actions)", () => {
   test("returns error when no session or credentials", async () => {
-    const result = await handleAnalytics({ action: "alias_list" })
-    expect(isToolError(result)).toBe(true)
+    await withoutDatabaseUrl(async () => {
+      const result = await handleAnalytics({ action: "alias_list" })
+      expect(isToolError(result)).toBe(true)
+    })
   })
 
   test("alias_list reports empty store", async () => {

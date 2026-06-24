@@ -5,6 +5,7 @@ import { getSession } from "../session/manager.js"
 import { CONSTANTS } from "../config/index.js"
 import { normalizeDatabaseUrl } from "../db/connector.js"
 import { createStoredConnection, isConnectionStoreEnabled } from "../store/connection-store.js"
+import { resolveDatabaseUrlFromEnv } from "../config/postgres-url.js"
 import { logger } from "../utils/logger.js"
 import { McpError, toMcpError } from "../utils/error.js"
 import { defineTool } from "./core/define-tool.js"
@@ -21,12 +22,12 @@ const ConnectInputSchema = z.object({
 type ConnectInput = z.infer<typeof ConnectInputSchema>
 
 async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
-  const raw = args.database_url ?? process.env.DATABASE_URL
+  const raw = args.database_url ?? resolveDatabaseUrlFromEnv()
   if (!raw) {
     return toolError(
-      "database_url is required. Pass the full Postgres URL: " +
-        "postgres://user:password@host/dbname?sslmode=require\n\n" +
-        "QueryGate connects server-side — the URL never leaves the server.",
+      "No database URL available.\n\n" +
+        "Set QUERYGATE_STORE_URL in server env (your .env / Vercel), or pass database_url once.\n" +
+        "Example: postgresql://user:pass@host.neon.tech/neondb?sslmode=require",
     )
   }
 
@@ -115,28 +116,91 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
     })
   } catch (err) {
     const mcpErr = err instanceof McpError ? err : toMcpError(err, "DB_CONNECT_FAILED")
-    const isNeon = databaseUrl.includes("neon.tech")
-    const hint = isNeon
-      ? "\n\nNeon tips:\n• Use the pooled connection string from the Neon dashboard\n• Add ?sslmode=require\n• Do NOT include channel_binding=require\n• Ensure the project is not suspended"
-      : "\n\nEnsure the server is reachable and SSL settings are correct."
-    return toolError(`Connection failed: ${mcpErr.message}${hint}`)
+
+    // Extract host/db/code from underlying pg error for max-signal diagnostics
+    const cause = err instanceof Error ? err : undefined
+    const pgCode = (cause as { code?: string })?.code
+    const safeUrl = redactPassword(databaseUrl)
+    const parsed = parseUrl(databaseUrl)
+
+    const lines = [
+      `ERROR: Connection failed.`,
+      "",
+      `Reason: ${mcpErr.message}`,
+      pgCode ? `pg code: ${pgCode}` : "",
+      "",
+      `Host:     ${parsed.host ?? "?"}`,
+      `Database: ${parsed.database ?? "?"}`,
+      `SSL:      ${parsed.sslmode ?? "(not set)"}`,
+      `URL:      ${safeUrl}`,
+      "",
+      databaseUrl.includes("neon.tech")
+        ? [
+            "Neon checklist:",
+            "  • Use the POOLED connection string (Neon dashboard → Connection string → Pooled)",
+            "  • Must include ?sslmode=require",
+            "  • Must NOT include channel_binding=require (we strip it but the source URL still matters)",
+            "  • Project must be active (suspended Neon projects refuse connections)",
+            "  • Verify the password — Neon sometimes rotates after long idle",
+          ].join("\n")
+        : [
+            "Direct Postgres checklist:",
+            "  • Host is reachable from Vercel (no IP allowlist blocking)",
+            "  • SSL is enabled (?sslmode=require)",
+            "  • User/password are correct",
+            "  • Database name exists",
+          ].join("\n"),
+      "",
+      "Quick local sanity check:",
+      `  psql "${redactPassword(databaseUrl)}"`,
+    ]
+      .filter(Boolean)
+      .join("\n")
+
+    return toolError(lines)
+  }
+}
+
+/** Strip the password from a Postgres URL for safe display in error messages. */
+function redactPassword(url: string): string {
+  try {
+    const u = new URL(url)
+    if (u.password) u.password = "***"
+    return u.toString()
+  } catch {
+    return url.replace(/:([^:@/]+)@/, ":***@")
+  }
+}
+
+function parseUrl(url: string): { host?: string; database?: string; sslmode?: string } {
+  try {
+    const u = new URL(url)
+    const sslmode = u.searchParams.get("sslmode")
+    const out: { host?: string; database?: string; sslmode?: string } = {
+      host: u.host,
+      database: u.pathname.replace(/^\//, ""),
+    }
+    if (sslmode) out.sslmode = sslmode
+    return out
+  } catch {
+    return {}
   }
 }
 
 export const connectTool = defineTool({
   name: "connect",
-  description: `Connect to the user's PostgreSQL database. Call ONCE with database_url — returns access_token.
+  description: `Connect to PostgreSQL. Returns access_token for later tool calls.
 
-Pass access_token on ALL subsequent calls (query, analytics). No need to call connect again.
-The token is self-contained — works across serverless cold starts without any Prisma lookup.`,
+If QUERYGATE_STORE_URL is set on the server (.env / Vercel), call connect with NO args — it uses that URL automatically.
+Otherwise pass database_url once. channel_binding=require is stripped automatically.`,
   inputSchema: {
     type: "object",
     properties: {
       database_url: {
         type: "string",
         description:
-          "Full Postgres URL: postgres://user:password@host/dbname?sslmode=require\n" +
-          "Use pooled connection string for Neon. Do NOT include channel_binding=require.",
+          "Optional when QUERYGATE_STORE_URL is set on the server. " +
+          "Otherwise pass full Postgres URL once: postgres://user:pass@host.neondb?sslmode=require",
       },
     },
     required: [],

@@ -37,9 +37,10 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
       },
     },
     vercelEnv: [
-      "QUERYGATE_STORE_URL — Postgres for encrypted connection store (Prisma)",
-      "JWT_SECRET — signs access tokens",
-      "ENCRYPTION_KEY — encrypts user DB URLs at rest",
+      "JWT_SECRET — signs access tokens (required)",
+      "ENCRYPTION_KEY — encrypts URLs inside JWT (optional but recommended)",
+      "QUERYGATE_STORE_URL — full Postgres URL for Prisma audit store",
+      "OR split vars: DATABASE=neondb + PGHOST + PGUSER + PGPASSWORD (Neon / Vercel integration)",
     ],
   })
 }

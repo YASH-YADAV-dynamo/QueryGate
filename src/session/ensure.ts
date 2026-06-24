@@ -5,6 +5,7 @@ import { createSession, getSession, getSessionForDatabaseUrl, updateSessionStatu
 import { CONSTANTS } from "../config/index.js"
 import { getRequestAccessToken, getRequestDatabaseUrl } from "../context.js"
 import { resolveDatabaseUrlFromToken } from "../store/connection-store.js"
+import { resolveDatabaseUrlFromEnv } from "../config/postgres-url.js"
 import { logger } from "../utils/logger.js"
 import { McpError, toMcpError } from "../utils/error.js"
 import type { SessionState } from "../db/types.js"
@@ -77,7 +78,8 @@ async function resolveUrl(
   if (fromRequest) return { url: normalizeDatabaseUrl(fromRequest) }
 
   // Fallback for local/stdio mode without JWT
-  if (process.env.DATABASE_URL) return { url: normalizeDatabaseUrl(process.env.DATABASE_URL) }
+  const fromEnv = resolveDatabaseUrlFromEnv()
+  if (fromEnv) return { url: fromEnv }
 
   return {}
 }
@@ -116,9 +118,8 @@ export async function resolveSessionForTool(
 
   return toolError(
     process.env.JWT_SECRET
-      ? "No database session. Call connect with database_url — it returns access_token. " +
-          "Pass access_token on every tool call (query, analytics)."
-      : "No database session. Call connect with database_url.",
+      ? "No database session. Call connect() with no args (uses QUERYGATE_STORE_URL from server env), or pass access_token."
+      : "No database session. Set QUERYGATE_STORE_URL in env or call connect with database_url.",
   )
 }
 

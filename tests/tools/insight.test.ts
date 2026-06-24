@@ -2,12 +2,15 @@ import { describe, expect, test } from "bun:test"
 import { handleQuery } from "../../src/tools/query.js"
 import { getToolText, isToolError } from "../../src/tools/core/response.js"
 import { createReadySession } from "../helpers/session.js"
+import { withoutDatabaseUrl } from "../helpers/env.js"
 import { buildMockSchema } from "../helpers/fixtures.js"
 
 describe("query handler (stats action)", () => {
   test("returns error when no session or credentials", async () => {
-    const result = await handleQuery({ action: "stats" })
-    expect(isToolError(result)).toBe(true)
+    await withoutDatabaseUrl(async () => {
+      const result = await handleQuery({ action: "stats" })
+      expect(isToolError(result)).toBe(true)
+    })
   })
 
   test("cache_stats reports query and embed cache", async () => {

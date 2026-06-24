@@ -30,7 +30,10 @@ function buildPoolConfig(databaseUrl: string): pg.PoolConfig {
     connectionString: normalized,
     max: 5,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: isLocal ? 10_000 : 25_000,
+    // Aggressive timeout — Vercel functions die at 60s, schema load must finish well before that.
+    connectionTimeoutMillis: isLocal ? 10_000 : 15_000,
+    // Statement timeout at the connection level so runaway queries don't hang the function.
+    statement_timeout: 30_000,
     ssl: isLocal ? false : { rejectUnauthorized: false },
   }
 }

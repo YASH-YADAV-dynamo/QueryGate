@@ -5,10 +5,13 @@ import { existsSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { spawnSync } from "node:child_process"
+import { ensureQuerygateStoreUrl } from "./resolve-postgres-env.mjs"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const envPath = resolve(root, ".env")
 if (existsSync(envPath)) config({ path: envPath })
+
+ensureQuerygateStoreUrl()
 
 function runPrisma(...args) {
   const prismaCli = resolve(root, "node_modules", "prisma", "build", "index.js")

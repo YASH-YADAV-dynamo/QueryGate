@@ -105,40 +105,69 @@ interface RawIndex {
   indexdef: string
 }
 
-/** Real COUNT(*) for tables whose pg_stat estimate is 0 — bounded to avoid slow scans. */
-const MAX_REAL_COUNTS = 50
-const COUNT_TIMEOUT_MS = 3000
+/**
+ * Real COUNT(*) for tables whose pg_stat estimate is 0.
+ * Parallel with concurrency=3 (within default pool max=5) and a 5-second total budget.
+ * If we run out of time, remaining tables keep their 0 estimate — user can still query them.
+ */
+const MAX_REAL_COUNTS = 25
+const PER_QUERY_TIMEOUT_MS = 1500
+const TOTAL_BUDGET_MS = 5000
+const CONCURRENCY = 3
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms)
+  })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
 
 async function fillMissingCounts(
   pool: pg.Pool,
   rowCounts: Map<string, number>,
   knownTables: Set<string>,
 ): Promise<void> {
-  const zeroTables = Array.from(knownTables).filter((fqn) => (rowCounts.get(fqn) ?? 0) === 0)
+  const zeroTables = Array.from(knownTables)
+    .filter((fqn) => (rowCounts.get(fqn) ?? 0) === 0)
+    .slice(0, MAX_REAL_COUNTS)
   if (zeroTables.length === 0) return
 
-  const targets = zeroTables.slice(0, MAX_REAL_COUNTS)
-  await Promise.all(
-    targets.map(async (fqn) => {
-      try {
-        const [schema, table] = fqn.split(".")
-        if (!schema || !table) return
-        const client = await pool.connect()
-        try {
-          await client.query(`SET LOCAL statement_timeout = ${COUNT_TIMEOUT_MS}`)
-          const result = await client.query<{ c: string }>(
-            `SELECT COUNT(*)::text AS c FROM "${schema.replace(/"/g, '""')}"."${table.replace(/"/g, '""')}"`,
-          )
-          const count = Number(result.rows[0]?.c ?? 0)
-          if (count > 0) rowCounts.set(fqn, count)
-        } finally {
-          client.release()
-        }
-      } catch {
-        // ignore — keep the 0 estimate; user can still query the table
-      }
-    }),
-  )
+  const deadline = Date.now() + TOTAL_BUDGET_MS
+  const queue = [...zeroTables]
+
+  const runOne = async (fqn: string): Promise<void> => {
+    if (Date.now() > deadline) return
+    try {
+      const [schema, table] = fqn.split(".")
+      if (!schema || !table) return
+      const safeSchema = schema.replace(/"/g, '""')
+      const safeTable = table.replace(/"/g, '""')
+      const result = await withTimeout(
+        pool.query<{ c: string }>(
+          `SELECT COUNT(*)::text AS c FROM "${safeSchema}"."${safeTable}"`,
+        ),
+        PER_QUERY_TIMEOUT_MS,
+      )
+      const count = result ? Number(result.rows[0]?.c ?? 0) : 0
+      if (count > 0) rowCounts.set(fqn, count)
+    } catch {
+      // ignore — keep 0; user can still query the table directly
+    }
+  }
+
+  const workers = Array.from({ length: CONCURRENCY }, async () => {
+    while (queue.length > 0 && Date.now() < deadline) {
+      const fqn = queue.shift()
+      if (fqn) await runOne(fqn)
+    }
+  })
+
+  await Promise.all(workers)
 }
 
 export async function inspectSchema(pool: pg.Pool): Promise<RawSchema> {

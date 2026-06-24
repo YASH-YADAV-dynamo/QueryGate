@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { getRequestDatabaseUrl } from "../context.js"
+import { resolveDatabaseUrlFromEnv } from "./postgres-url.js"
 
 const SettingsSchema = z.object({
   DATABASE_URL: z.string().optional(),
@@ -19,7 +20,7 @@ export function getDatabaseUrl(): string {
   const fromRequest = getRequestDatabaseUrl()
   if (fromRequest) return fromRequest
 
-  const envUrl = settings.DATABASE_URL ?? process.env.DATABASE_URL
+  const envUrl = settings.DATABASE_URL ?? resolveDatabaseUrlFromEnv()
   if (envUrl) return envUrl
 
   throw new Error(
