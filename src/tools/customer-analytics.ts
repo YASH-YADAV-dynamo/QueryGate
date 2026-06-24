@@ -46,15 +46,10 @@ export async function handleCustomerAnalytics(
 
 export const customerAnalyticsTool = defineTool({
   name: "customer_analytics",
-  description: `Customer-focused analytics dashboard (Tableau-style UI in ChatGPT).
+  description: `Customer-focused analytics dashboard (dark card UI in ChatGPT).
 
-Call connect first. Scans for customer/user/client tables and returns:
-- KPI cards (total customers, new signups, active cohort)
-- Segment breakdown
-- Monthly signup trend (6 months)
-- Recent customers table
-
-Renders an interactive dashboard in ChatGPT. If the widget fails to load, the text summary in chat is the fallback.`,
+REQUIRED on hosted Vercel: pass access_token from connect (NOT session_id).
+Scans customer/subscription tables and returns KPI cards, segments, trends, recent customers.`,
   inputSchema,
   meta: {
     ui: { resourceUri: CUSTOMER_ANALYTICS_WIDGET_URI },

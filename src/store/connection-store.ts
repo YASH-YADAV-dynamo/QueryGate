@@ -17,19 +17,26 @@ export interface StoredConnection {
   accessToken: string
 }
 
-/** Encrypt URL, persist in Postgres, return signed JWT. */
+/** Encrypt URL, persist in Postgres, return signed JWT. Reuses active row for same DB URL. */
 export async function createStoredConnection(databaseUrl: string): Promise<StoredConnection> {
   const prisma = getPrisma()
-  const encryptedUrl = encryptSecret(databaseUrl)
   const connId = makeConnId(databaseUrl)
   const expiresAt = new Date(Date.now() + getTokenTtlMs())
 
+  const existing = await prisma.connection.findFirst({
+    where: { connId, revokedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: "desc" },
+  })
+
+  if (existing) {
+    const accessToken = await signConnectionToken(existing.id)
+    logger.info("Connection reused", { connectionId: existing.id, connId })
+    return { connectionId: existing.id, accessToken }
+  }
+
+  const encryptedUrl = encryptSecret(databaseUrl)
   const row = await prisma.connection.create({
-    data: {
-      encryptedUrl,
-      connId,
-      expiresAt,
-    },
+    data: { encryptedUrl, connId, expiresAt },
   })
 
   const accessToken = await signConnectionToken(row.id)

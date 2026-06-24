@@ -10,12 +10,12 @@ No OpenAI or Anthropic API keys required.
 
 ### 1. Hosted (easiest — ChatGPT, no install)
 
-Use the live server at **[querygate.vercel.app](https://querygate.vercel.app/)**.
+Use the live server at **[querygatev0.vercel.app](https://querygatev0.vercel.app/)**.
 
 | Client | Server URL |
 |--------|------------|
-| **ChatGPT** custom app | `https://querygate.vercel.app/sse` |
-| **Cursor / Claude** remote | `https://querygate.vercel.app/mcp` |
+| **ChatGPT** custom app | `https://querygatev0.vercel.app/sse` |
+| **Cursor / Claude** remote | `https://querygatev0.vercel.app/mcp` |
 
 In ChatGPT → **Settings → Apps → Create app** → paste the `/sse` URL → **No Auth**.
 
@@ -34,7 +34,7 @@ Optional: set `Authorization: Bearer <access_token>` in the ChatGPT app headers 
 
 QueryGate runs all SQL **on the server** (Neon, Supabase, RDS, etc.). The AI client never connects to Postgres directly.
 
-Copy-paste JSON: [querygate.vercel.app/setup](https://querygate.vercel.app/setup)
+Copy-paste JSON: [querygatev0.vercel.app/setup](https://querygatev0.vercel.app/setup)
 
 ---
 

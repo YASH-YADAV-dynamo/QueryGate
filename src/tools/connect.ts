@@ -11,7 +11,7 @@ import {
 import { logger } from "../utils/logger.js"
 import { McpError, toMcpError } from "../utils/error.js"
 import { defineTool } from "./core/define-tool.js"
-import { toolOk, toolError } from "./core/response.js"
+import { toolOk, toolError, toolOkStructured } from "./core/response.js"
 import type { McpToolResult } from "./core/types.js"
 
 const ConnectInputSchema = z.object({
@@ -43,14 +43,21 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
   }
 
   try {
-    let stored: { connectionId: string; accessToken: string } | undefined
-    if (isConnectionStoreEnabled()) {
-      stored = await createStoredConnection(databaseUrl)
-    }
-
+    // Connect to user DB first — schema load must succeed even if metadata store is slow
     const session = await ensureConnected(databaseUrl)
     const schema = session.schema
     const liveSession = getSession(session.id)!
+
+    let stored: { connectionId: string; accessToken: string } | undefined
+    if (isConnectionStoreEnabled()) {
+      try {
+        stored = await createStoredConnection(databaseUrl)
+      } catch (storeErr) {
+        logger.error("Connection store failed (JWT unavailable this request)", {
+          error: storeErr instanceof Error ? storeErr.message : String(storeErr),
+        })
+      }
+    }
 
     let autoApplied = 0
     const inferred = inferAliases(schema)
@@ -65,39 +72,60 @@ async function handleConnect(args: ConnectInput): Promise<McpToolResult> {
     const preview = tableList.slice(0, 15).join(", ")
     const overflow = tableList.length > 15 ? ` … +${tableList.length - 15} more` : ""
 
+    const structured = {
+      access_token: stored?.accessToken ?? null,
+      connection_id: stored?.connectionId ?? null,
+      session_id: getReadySessionId(session),
+      database: schema.dbName,
+      tables: tableList,
+      store_enabled: isConnectionStoreEnabled(),
+      hosted_note: stored
+        ? "REQUIRED: pass access_token on ALL later tools (schema_reader, execute_sql, customer_analytics). session_id does NOT work across Vercel requests."
+        : "Set QUERYGATE_STORE_URL on server for JWT tokens. Until then pass database_url on every tool call.",
+    }
+
     logger.info("Connect complete", {
       sessionId: session.id,
       tables: schema.tables.size,
       stored: Boolean(stored),
     })
 
-    const lines = [
+    const lines: string[] = []
+
+    if (stored) {
+      lines.push(
+        "=== ACCESS TOKEN (use on every later tool call) ===",
+        stored.accessToken,
+        "",
+        `Connection ID: ${stored.connectionId}`,
+        "⚠ session_id below is NOT reliable on hosted Vercel — always pass access_token",
+        "",
+      )
+    }
+
+    lines.push(
       `Connected to: ${schema.dbName} (PostgreSQL ${schema.version.split(" ")[0]})`,
-      `Session ID: ${getReadySessionId(session)}`,
+      `Session ID (ephemeral): ${getReadySessionId(session)}`,
       "",
       `Tables (${schema.tables.size}): ${preview}${overflow}`,
       `PII-flagged tables: ${schema.piiTables.size}`,
       `Auto-inferred aliases: ${autoApplied}`,
-    ]
+    )
 
     if (stored) {
       lines.push(
         "",
-        `Connection ID: ${stored.connectionId}`,
-        `Access token: ${stored.accessToken}`,
-        "",
-        "Use access_token on all later tool calls (or Authorization: Bearer header).",
-        "Do NOT send database_url again — the server decrypts your URL from Postgres using this token.",
+        "Next: schema_reader({ access_token: \"<token above>\" }) then execute_sql({ access_token, sql }).",
       )
     } else {
       lines.push(
         "",
-        "Use session_id for schema_reader and execute_sql.",
-        "On hosted Vercel, set QUERYGATE_STORE_URL + JWT_SECRET + ENCRYPTION_KEY for JWT-based reconnect.",
+        "Hosted Vercel: enable QUERYGATE_STORE_URL + JWT_SECRET + ENCRYPTION_KEY for access_token.",
+        "Until then: pass database_url on every tool call.",
       )
     }
 
-    return toolOk(lines.join("\n"))
+    return toolOkStructured(lines.join("\n"), structured)
   } catch (err) {
     const mcpErr = err instanceof McpError ? err : toMcpError(err, "DB_CONNECT_FAILED")
     const hint =
@@ -115,8 +143,8 @@ export const connectTool = defineTool({
 Pass database_url ONCE with the user's full connection string.
 The server encrypts the URL in Postgres and returns an access_token (JWT with connection id only).
 
-After connect, use access_token on schema_reader, execute_sql, insight, etc.
-ChatGPT should store the token — never send the raw database URL again.`,
+After connect, ALWAYS pass access_token (not session_id) on schema_reader, execute_sql, customer_analytics.
+The access_token is a JWT — your DB URL is encrypted in Postgres. session_id is RAM-only and breaks on Vercel.`,
   inputSchema: {
     type: "object",
     properties: {

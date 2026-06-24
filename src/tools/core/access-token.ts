@@ -2,5 +2,5 @@
 export const ACCESS_TOKEN_SCHEMA = {
   type: "string" as const,
   description:
-    "JWT access token from connect — use on all later tool calls instead of database_url (hosted Vercel)",
+    "JWT from connect — REQUIRED on hosted Vercel for every tool call. session_id alone will fail.",
 }

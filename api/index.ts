@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node"
 export default function handler(_req: VercelRequest, res: VercelResponse) {
   const host = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
-    : "https://querygate.vercel.app"
+    : "https://querygatev0.vercel.app"
 
   res.status(200).json({
     name: "QueryGate",

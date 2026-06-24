@@ -88,21 +88,55 @@ async function resolveDatabaseUrlFromContext(
   const fromRequest = getRequestDatabaseUrl()
   if (fromRequest) return fromRequest
 
-  const envUrl = process.env.DATABASE_URL
-  if (envUrl) return envUrl
+  // Hosted mode: user DB URL comes from JWT only — not server env
+  if (!isConnectionStoreEnabled()) {
+    const envUrl = process.env.DATABASE_URL
+    if (envUrl) return envUrl
+  }
 
   return undefined
 }
 
+function hasDurableCredentials(
+  databaseUrl?: string,
+  accessToken?: string,
+): boolean {
+  return Boolean(
+    accessToken || databaseUrl || getRequestAccessToken() || getRequestDatabaseUrl(),
+  )
+}
+
 /**
  * Resolve a ready session for tool calls.
- * On Vercel/serverless: use access_token (JWT) or DATABASE_URL to reconnect across lambdas.
+ * On Vercel/serverless: access_token (JWT) is the source of truth — session_id is RAM-only cache.
  */
 export async function resolveSessionForTool(
   sessionId?: string,
   databaseUrl?: string,
   accessToken?: string,
 ): Promise<SessionState | McpToolResult> {
+  const storeEnabled = isConnectionStoreEnabled()
+
+  // JWT / explicit URL first when provided; else try same-lambda RAM session
+  if (hasDurableCredentials(databaseUrl, accessToken) || !storeEnabled) {
+    const url = await resolveDatabaseUrlFromContext(databaseUrl, accessToken)
+    if (url) {
+      try {
+        const session = await ensureConnected(url)
+        if (sessionId && session.id !== sessionId) {
+          logger.info("Session recovered via durable credential (serverless)", {
+            requested: sessionId,
+            active: session.id,
+          })
+        }
+        return session
+      } catch (err) {
+        const msg = err instanceof McpError ? err.message : String(err)
+        return toolError(`Database connection failed: ${msg}`)
+      }
+    }
+  }
+
   if (sessionId) {
     const byId = getSession(sessionId)
     if (byId) {
@@ -113,35 +147,31 @@ export async function resolveSessionForTool(
     }
   }
 
-  const url = await resolveDatabaseUrlFromContext(databaseUrl, accessToken)
-  if (!url) {
-    if (sessionId || accessToken) {
-      return toolError(
-        isConnectionStoreEnabled()
-          ? "Session expired on this server instance. Pass access_token from connect, or Authorization: Bearer <token> header."
-          : "Session expired or not found on this server instance. Call connect again with database_url (your Postgres connection string).",
-      )
+  if (!storeEnabled) {
+    const url = await resolveDatabaseUrlFromContext(databaseUrl, accessToken)
+    if (url) {
+      try {
+        return await ensureConnected(url)
+      } catch (err) {
+        const msg = err instanceof McpError ? err.message : String(err)
+        return toolError(`Database connection failed: ${msg}`)
+      }
     }
+  }
+
+  if (sessionId || accessToken) {
     return toolError(
-      isConnectionStoreEnabled()
-        ? "No database session. Call connect with database_url once — it returns an access_token. Use that token on all later tool calls."
-        : "No database session. Call connect with database_url, or send DATABASE_URL on every MCP request header.",
+      storeEnabled
+        ? "Session not found on this server instance. You MUST pass access_token from connect on every tool call (session_id alone does not work on Vercel). Copy the Access token from the connect response."
+        : "Session expired or not found on this server instance. Call connect again with database_url (your Postgres connection string).",
     )
   }
 
-  try {
-    const session = await ensureConnected(url)
-    if (sessionId && session.id !== sessionId) {
-      logger.info("Session recovered (serverless)", {
-        requested: sessionId,
-        active: session.id,
-      })
-    }
-    return session
-  } catch (err) {
-    const msg = err instanceof McpError ? err.message : String(err)
-    return toolError(`Database connection failed: ${msg}`)
-  }
+  return toolError(
+    storeEnabled
+      ? "No database session. Call connect with database_url once — it returns access_token. Pass access_token on schema_reader, execute_sql, customer_analytics, etc."
+      : "No database session. Call connect with database_url, or send DATABASE_URL on every MCP request header.",
+  )
 }
 
 export function getReadySessionId(session: SessionState): string {

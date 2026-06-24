@@ -40,7 +40,7 @@
     <h2>ChatGPT custom app</h2>
     <p>
       Settings → Apps → Create app → Server URL:
-      <code id="sse-url">https://querygate.vercel.app/sse</code><br />
+      <code id="sse-url">https://querygatev0.vercel.app/sse</code><br />
       Paste your Postgres URL in chat once — the AI calls <code>connect</code> and gets an
       <code>access_token</code>. Use that JWT on all later requests (no raw URL in headers).
     </p>
@@ -49,7 +49,7 @@
     <pre><code id="config">{
   "mcpServers": {
     "querygate": {
-      "url": "https://querygate.vercel.app/sse",
+      "url": "https://querygatev0.vercel.app/sse",
       "headers": {
         "Authorization": "Bearer &lt;access_token from connect&gt;"
       }
@@ -57,7 +57,7 @@
   }
 }</code></pre>
 
-    <p>Cursor / Claude remote (Streamable HTTP): <code id="mcp-url">https://querygate.vercel.app/mcp</code></p>
+    <p>Cursor / Claude remote (Streamable HTTP): <code id="mcp-url">https://querygatev0.vercel.app/mcp</code></p>
     <p>Ready-to-copy JSON: <a href="/setup">/setup</a></p>
 
     <h2>Local stdio (Cursor, Claude Desktop)</h2>
@@ -80,7 +80,7 @@
       document.getElementById("mcp-url").textContent = origin + "/mcp"
       document.getElementById("config").textContent = document
         .getElementById("config")
-        .textContent.replace(/https:\/\/querygate\.vercel\.app\/sse/g, origin + "/sse")
+        .textContent.replace(/https:\/\/querygatev0\.vercel\.app\/sse/g, origin + "/sse")
     </script>
   </body>
 </html>
